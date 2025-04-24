@@ -1,0 +1,5 @@
+.contenu {
+    background-color: var(--bs-gray-200);
+    flex-grow: 1;
+    padding: 50px;
+}

@@ -1,0 +1,86 @@
+nav {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  background-color: white;
+  padding: 50px;
+  display: flex;
+  height: 100%;
+  width: inherit;
+}
+
+img {
+  width: 50%;
+  
+}
+
+nav .btn {
+  gap: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.topnav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 200px;
+  gap: 10px;
+  flex-grow: 1;
+}
+nav button, nav a {
+  width: 100%;
+  text-decoration: none;
+  font-size: 18px !important;
+}
+
+nav a.active:hover button {
+  background-color: var(--bs-gray-300) !important;
+}
+
+nav a.active {
+  color: black !important;
+}
+
+nav a.active button {
+  background-color: var(--bs-gray-200);
+  border-radius: 0.5rem;
+}
+
+.topnav img {
+  max-width: 170px;
+  margin-bottom: 2rem;
+}
+.bottomnav {
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+  width: 100%;
+}
+.bottomnav button, .bottomnav a {
+    border-radius: 20px;
+}
+.topnav button {
+  justify-content: left;
+  padding-left: 1rem;
+}
+
+.btn:hover{
+  background-color: var(--bs-gray-100) !important;
+  color: #000000 !important;
+  border: 1px solid #020202;
+}
+
+.btn{
+  border: 1px solid #000000;
+}
+
+.nav-wrapper {
+  transition: max-width 0.8s;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 300px;
+  flex-shrink: 0;
+}
