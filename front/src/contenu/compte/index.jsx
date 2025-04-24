@@ -5,7 +5,7 @@ import Accordion from "react-bootstrap/Accordion";
 import Form from "react-bootstrap/Form";
 import Button from "react-bootstrap/Button";
 import CommandePage from "./commande/commande";
-import Confidentialité from "../confidentialité/index";
+import Confidentialité from "../confidentialite/index";
 
 function Compte(props) {
   const [email, setEmail] = useState("");

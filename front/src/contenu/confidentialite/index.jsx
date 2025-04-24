@@ -6,7 +6,7 @@ import Form from "react-bootstrap/Form";
 import Button from "react-bootstrap/Button";
 
 
-function Confidentialité(props) {
+function Confidentialite(props) {
 
     return (
         <div className="p-6 max-w-4xl mx-auto text-gray-800">
@@ -74,4 +74,4 @@ function Confidentialité(props) {
 
 }
 
-export default Confidentialité;
+export default Confidentialite;
