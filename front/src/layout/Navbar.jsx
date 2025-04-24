@@ -115,12 +115,7 @@ function Navbar(props) {
                   Boutique
                 </button>
               </NavLink>
-              <NavLink to="/matchs">
-                <button className="btn">
-                  <i className="bi bi-calendar-fill"></i>
-                  Matchs
-                </button>
-              </NavLink>
+              
             </div>
 
             <div className="bottomnav">
