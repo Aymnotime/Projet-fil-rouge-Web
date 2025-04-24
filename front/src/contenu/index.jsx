@@ -3,6 +3,7 @@ import Accueil from "./accueil";
 import Boutique from "./boutique";
 import "./partiedroite.css";
 import { Routes, Route, Navigate } from "react-router-dom";
+import Confidentialite from "./confidentialite";
 import Compte from "./compte";
 import Matchs from "./matchs";
 import ArticleUrl from "./accueil/articleUrl/articleurl";
@@ -18,6 +19,7 @@ function Contenu(props) {
         <Route path="/compte" element={props.user ? <Compte user={props.user} panier={panier} setPanier={setPanier} /> : (props.user === null ? <Navigate to="/" /> : <></>)} />
         <Route path="/matchs" element={<Matchs equipes={props.equipes} />} />
         <Route path="/article/:id" element={<ArticleUrl articles={props.articles}/>} />
+        <Route path="/confidentialite" element={<Confidentialite />} />
       </Routes>
     </div>
   );

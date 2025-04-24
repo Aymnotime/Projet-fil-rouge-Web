@@ -87,6 +87,12 @@ function Navbar(props) {
           <input type="email" placeholder="Email" className="form-control" name="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" placeholder="Mot de passe" className="form-control" name="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <input type="password" placeholder="Confirmer le mot de passe" className="form-control" name="confirm" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />
+          <div className="form-check mb-3 mt-2">
+            <input className="form-check-input" type="checkbox" value="" id="flexCheckDefault" required />
+            <label className="form-check-label" htmlFor="flexCheckDefault">
+              J'accepte les <NavLink to="/confidentialite">conditions d'utilisation</NavLink> et la <NavLink to="/confidentialite">politique de confidentialité</NavLink>
+            </label>
+          </div>
           <button type="submit" className="btn btn-primary">Inscription</button>
           {error && <div className="alert alert-danger w-100 mb-0">{error}</div>}
         </form>
