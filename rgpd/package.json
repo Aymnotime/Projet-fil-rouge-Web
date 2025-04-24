@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "react-bootstrap": "^2.9.1",
+    "swiper": "^11.0.5"
+  }
+}

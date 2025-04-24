@@ -1,0 +1,24 @@
+.titreArticleUrl{
+    font-size: 1.5em;
+    font-weight: bold;
+    margin-bottom: 0.5em;
+    text-align: center;
+}
+.imageArticleUrl{
+    width: 500px;
+    height: 700px;
+    object-fit: cover;
+    align-items: center;
+    border-radius: 10px 10px 0 0;
+}
+.containerArticleUrl{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 30px;
+    width: 100%;
+    transition: transform 0.5s, box-shadow 0.5s;
+    cursor: pointer;
+    position: relative;
+}

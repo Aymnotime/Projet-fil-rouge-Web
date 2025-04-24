@@ -1,0 +1,62 @@
+.swiper {
+  margin: 0px;
+  max-width: 100%;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.contenu {
+  width: 81vw;
+}
+#swiperslide {
+  width: 100vw;
+  height: 100vh;
+}
+.swiper-slide {
+  text-align: center;
+  height: 85vh;
+
+  font-size: 18px;
+  background: #fff;
+  /* Center slide text vertically */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2rem;
+  cursor: pointer;
+}
+.swiper-slide .titre {
+  font-size: 3rem;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+}
+.joueur {
+  width: 100%;
+  object-fit: cover;
+  height: 100%;
+  position: absolute;
+  transition: opacity 0.2s ease-in-out, filter 0.2s ease-in-out;
+}
+
+.team {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+  transform: scale(0.9);
+}
+
+.joueur:hover {
+  filter: brightness(0.3);
+}
+
+.joueur:hover + .team {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.logo {
+  transform: scale(1);
+  transition: transform 0.5s ease-in-out;
+}
