@@ -142,6 +142,34 @@ function Compte(props) {
                                   >
                                     Télécharger mes données en PDF
                                   </Button>
+
+                                  <Button
+                                    variant="danger"
+                                    onClick={() => {
+                                      if (window.confirm("Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.")) {
+                                        fetch("/api/user/delete", {
+                                          method: "DELETE",
+                                          credentials: "include", // Inclure les cookies de session
+                                        })
+                                          .then((response) => response.json())
+                                          .then((data) => {
+                                            if (data.success) {
+                                              alert("Votre compte a été supprimé avec succès.");
+                                              window.location.href = "/"; // Rediriger après suppression
+                                            } else {
+                                              alert("Erreur : " + JSON.stringify(data));
+                                            }
+                                          })
+                                          .catch((error) => {
+                                            console.error("Erreur réseau :", error);
+                                            alert("Une erreur est survenue lors de la suppression de votre compte.");
+                                          });
+                                      }
+                                    }}
+                                    className="mt-3 w-100"
+                                  >
+                                    Supprimer mon compte
+                                  </Button>
                   {mdpmodifie && (
                     <div className="fade-in">
                       <Form.Label>Ancien mot de passe </Form.Label>
