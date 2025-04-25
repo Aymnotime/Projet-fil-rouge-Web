@@ -349,6 +349,33 @@ app.post("/api/login", (req, res) => {
   );
 });
 
+app.delete("/api/user", (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: "Non connecté" });
+    return;
+  }
+
+  const userId = req.session.user.id;
+
+  // Supprimer ou anonymiser les données associées
+  pool.query(
+    `
+    DELETE FROM commande WHERE id_utilisateur = ?;
+    DELETE FROM adresse WHERE id_utilisateur = ?;
+    UPDATE utilisateur SET nom = 'Anonyme', prenom = 'Anonyme', email = CONCAT('anonyme_', id, '@example.com'), mdp = '', fonction = 'anonyme' WHERE id = ?;
+    `,
+    [userId, userId, userId],
+    (err, result) => {
+      if (err) {
+        res.send({ success: false, message: err });
+      } else {
+        // Détruire la session après suppression
+        req.session.destroy();
+        res.send({ success: true, message: "Compte utilisateur supprimé avec succès" });
+      }
+    }
+  );
+});
 app.get("/api/logout", (req, res) => {
   req.session.destroy();
   res.send({ success: true, message: "success" });
@@ -394,7 +421,7 @@ app.post("/api/register", (req, res) => {
     } else {
       pool.query(
         "INSERT INTO utilisateur (nom, prenom, email, mdp, fonction) VALUES (?, ?, ?, ?, ?)",
-        [nom, prenom, email, hash, "joueur"],
+        [nom, prenom, email, hash, "client"],
         (err, result) => {
           if (err) {
             res.send({ success: false, message: err });
@@ -459,6 +486,45 @@ app.get("/api/user/pdf", (req, res) => {
 
   // Terminer le PDF
   doc.end();
+});
+
+
+app.delete("/api/user/delete", (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: "Non connecté" });
+    return;
+  }
+
+  const userId = req.session.user.id;
+
+  // Supprimer les données associées dans la table commande
+  pool.query("DELETE FROM commande WHERE id_utilisateur = ?", [userId], (err) => {
+    if (err) {
+      console.error("Erreur SQL (commande) :", err);
+      res.send({ success: false, message: err });
+      return;
+    }
+
+    // Supprimer l'utilisateur
+    pool.query("DELETE FROM utilisateur WHERE id = ?", [userId], (err) => {
+      if (err) {
+        console.error("Erreur SQL (utilisateur) :", err);
+        res.send({ success: false, message: err });
+        return;
+      }
+
+      // Détruire la session après suppression
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Erreur destruction session :", err);
+          res.send({ success: false, message: "Utilisateur supprimé, mais erreur de déconnexion" });
+          return;
+        }
+
+        res.send({ success: true, message: "Compte utilisateur supprimé avec succès" });
+      });
+    });
+  });
 });
 
 app.listen(3000, () => {
