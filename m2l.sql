@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : 127.0.0.1
--- Généré le : jeu. 24 avr. 2025 à 16:08
+-- Généré le : ven. 25 avr. 2025 à 10:34
 -- Version du serveur : 10.4.32-MariaDB
 -- Version de PHP : 8.0.30
 
@@ -102,8 +102,7 @@ CREATE TABLE `commande` (
 --
 
 INSERT INTO `commande` (`id`, `id_utilisateur`, `produits`, `date`) VALUES
-('4076090b-b547-475a-aa90-289a83f829da', 2, '[{\"id\":1,\"quantity\":4},{\"id\":3,\"quantity\":2}]', '2023-12-08 15:00:16'),
-('4da9d97e-5f9e-4139-a96a-a27b25db551f', 5, '[{\"id\":1,\"quantity\":1}]', '2025-04-24 12:57:09');
+('4076090b-b547-475a-aa90-289a83f829da', 2, '[{\"id\":1,\"quantity\":4},{\"id\":3,\"quantity\":2}]', '2023-12-08 15:00:16');
 
 -- --------------------------------------------------------
 
@@ -148,18 +147,50 @@ CREATE TABLE `utilisateur` (
   `prenom` varchar(50) NOT NULL,
   `email` varchar(100) NOT NULL,
   `mdp` varchar(100) NOT NULL,
-  `fonction` varchar(100) NOT NULL
+  `fonction` varchar(100) NOT NULL,
+  `derniere_connexion` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Déchargement des données de la table `utilisateur`
 --
 
-INSERT INTO `utilisateur` (`id`, `nom`, `prenom`, `email`, `mdp`, `fonction`) VALUES
-(2, 'Test', 'Test', 'test@gmail.com', '$2b$10$2g8Kh9Mb1AvP1bYOj0VZJumPdgRGZSgSkY0rsjnP9ErDDLU7e.KPS', 'joueur'),
-(3, 'Test', 'Test', 'test@gmail.com', '$2b$10$.O4HwtAzcAnuUySsCKeAVObZCzjag2GbvnwjBo8fbGqfxH6RpXlSG', 'joueur'),
-(4, 'Test', 'Test', 'test@gmail.com', '$2b$10$E/oc.2VHPZhJsIZGK7Tqi.VR0K8edPp176J9d5LzIk1N.aVQgt.Ce', 'joueur'),
-(5, 'the', 'aym', 'aymen.atif10@gmail.com', '$2b$10$Pw31d.lACNzs1ed8vb707eIiRl4GPepyZImSjV4idMlodzEnXdQ6u', 'joueur');
+INSERT INTO `utilisateur` (`id`, `nom`, `prenom`, `email`, `mdp`, `fonction`, `derniere_connexion`) VALUES
+(2, 'Test', 'Test', 'test@gmail.com', '$2b$10$2g8Kh9Mb1AvP1bYOj0VZJumPdgRGZSgSkY0rsjnP9ErDDLU7e.KPS', 'joueur', '2025-04-25 09:29:46'),
+(3, 'Test', 'Test', 'test@gmail.com', '$2b$10$.O4HwtAzcAnuUySsCKeAVObZCzjag2GbvnwjBo8fbGqfxH6RpXlSG', 'joueur', '2025-04-25 09:29:46'),
+(4, 'Test', 'Test', 'test@gmail.com', '$2b$10$E/oc.2VHPZhJsIZGK7Tqi.VR0K8edPp176J9d5LzIk1N.aVQgt.Ce', 'joueur', '2025-04-25 09:29:46'),
+(8, 'test', 'test', 'test@cyna.com', '$2b$10$brX0BelZJgfMwf.XrDY1retwr8oUykN19cIAmNeRdaJgCDoQLqL/q', 'joueur', '2025-04-25 09:29:46');
+
+-- --------------------------------------------------------
+
+--
+-- Structure de la table `utilisateur_archive`
+--
+
+CREATE TABLE `utilisateur_archive` (
+  `id` int(11) NOT NULL,
+  `nom` varchar(50) DEFAULT NULL,
+  `prenom` varchar(50) DEFAULT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `mdp` varchar(100) DEFAULT NULL,
+  `fonction` varchar(100) DEFAULT NULL,
+  `derniere_connexion` datetime DEFAULT NULL,
+  `date_archivage` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Déchargement des données de la table `utilisateur_archive`
+--
+
+INSERT INTO `utilisateur_archive` (`id`, `nom`, `prenom`, `email`, `mdp`, `fonction`, `derniere_connexion`, `date_archivage`) VALUES
+(12, 'Dupont', 'Jean', 'jean.dupont@example.com', 'password123', 'Manager', '2024-01-01 00:00:00', '2025-04-25 10:15:01'),
+(13, 'Martin', 'Marie', 'marie.martin@example.com', 'password456', 'Developer', '2024-06-01 00:00:00', '2025-04-25 10:15:01'),
+(14, 'Durand', 'Pierre', 'pierre.durand@example.com', 'password789', 'Designer', '2023-09-15 00:00:00', '2025-04-25 10:15:01'),
+(15, 'Lemoine', 'Sophie', 'sophie.lemoine@example.com', 'password000', 'Analyst', '2023-11-15 00:00:00', '2025-04-25 10:15:01'),
+(16, 'Dupont', 'Jean', 'jean.dupoddd@example.com', 'password123', 'Manager', '2024-01-01 00:00:00', '2025-04-25 10:15:50'),
+(17, 'Martin', 'Marie', 'marie.martddddn@example.com', 'password456', 'Developer', '2024-06-01 00:00:00', '2025-04-25 10:15:50'),
+(18, 'Durand', 'Pierre', 'pierre.duraddd@example.com', 'password789', 'Designer', '2023-09-15 00:00:00', '2025-04-25 10:15:50'),
+(19, 'Lemoine', 'Sophie', 'sophie.lemddd@example.com', 'password000', 'Analyst', '2023-11-15 00:00:00', '2025-04-25 10:15:50');
 
 --
 -- Index pour les tables déchargées
@@ -191,6 +222,12 @@ ALTER TABLE `utilisateur`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Index pour la table `utilisateur_archive`
+--
+ALTER TABLE `utilisateur_archive`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- AUTO_INCREMENT pour les tables déchargées
 --
 
@@ -210,7 +247,7 @@ ALTER TABLE `stock`
 -- AUTO_INCREMENT pour la table `utilisateur`
 --
 ALTER TABLE `utilisateur`
-  MODIFY `id` int(255) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(255) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- Contraintes pour les tables déchargées
