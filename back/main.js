@@ -306,48 +306,83 @@ app.post("/api/login", (req, res) => {
   const email = req.body.email;
   const password = req.body.password;
 
-  // check all fields are filled
   if (!email || !password) {
     res.send({ success: false, message: "Veuillez remplir tous les champs" });
     return;
   }
 
+  // 1. Vérifier si l'utilisateur est archivé
   pool.query(
-    "SELECT * FROM utilisateur WHERE email = ?",
+    "SELECT * FROM utilisateur_archive WHERE email = ?",
     [email],
-    (err, rows) => {
+    (err, archivedRows) => {
       if (err) {
         res.send({ error: err });
-      } else {
-        if (rows.length > 0) {
-          bcrypt.compare(password, rows[0].mdp, (err, result) => {
-            if (result) {
-              const user = rows[0];
-              req.session.user = {
-                id: user.id,
-                nom: user.nom,
-                prenom: user.prenom,
-                email: user.email,
-                fonction: user.fonction,
-              };
-              res.send({ success: true, message: "success" });
+        return;
+      }
+
+      if (archivedRows.length > 0) {
+        // Utilisateur archivé => bloqué
+        res.send({
+          success: false,
+          message: "Ce compte a été archivé et ne peut plus se connecter.",
+        });
+        return;
+      }
+
+      // 2. Vérifier dans la table utilisateur normale
+      pool.query(
+        "SELECT * FROM utilisateur WHERE email = ?",
+        [email],
+        (err, rows) => {
+          if (err) {
+            res.send({ error: err });
+          } else {
+            if (rows.length > 0) {
+              bcrypt.compare(password, rows[0].mdp, (err, result) => {
+                if (result) {
+                  const user = rows[0];
+
+                  // 🔁 Mettre à jour la date de dernière connexion
+                  pool.query(
+                    "UPDATE utilisateur SET derniere_connexion = NOW() WHERE id = ?",
+                    [user.id],
+                    (updateErr) => {
+                      if (updateErr) {
+                        console.error("Erreur mise à jour dernière connexion :", updateErr);
+                      }
+                    }
+                  );
+
+                  req.session.user = {
+                    id: user.id,
+                    nom: user.nom,
+                    prenom: user.prenom,
+                    email: user.email,
+                    fonction: user.fonction,
+                  };
+
+                  res.send({ success: true, message: "success" });
+                } else {
+                  res.send({
+                    success: false,
+                    message: "Mot de passe ou email incorrect",
+                  });
+                }
+              });
             } else {
               res.send({
                 success: false,
                 message: "Mot de passe ou email incorrect",
               });
             }
-          });
-        } else {
-          res.send({
-            success: false,
-            message: "Mot de passe ou email incorrect",
-          });
+          }
         }
-      }
+      );
     }
   );
 });
+
 
 app.delete("/api/user", (req, res) => {
   if (!req.session.user) {
@@ -526,6 +561,10 @@ app.delete("/api/user/delete", (req, res) => {
     });
   });
 });
+
+require('dotenv').config({ path: './back/.env' });  
+
+require('./archiveUsers');
 
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
