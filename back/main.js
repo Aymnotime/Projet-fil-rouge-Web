@@ -421,7 +421,7 @@ app.post("/api/register", (req, res) => {
     } else {
       pool.query(
         "INSERT INTO utilisateur (nom, prenom, email, mdp, fonction) VALUES (?, ?, ?, ?, ?)",
-        [nom, prenom, email, hash, "joueur"],
+        [nom, prenom, email, hash, "client"],
         (err, result) => {
           if (err) {
             res.send({ success: false, message: err });
