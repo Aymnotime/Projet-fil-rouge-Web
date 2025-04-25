@@ -8,6 +8,12 @@ nav {
   display: flex;
   height: 100%;
   width: inherit;
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+.dark-mode nav {
+  background-color: #444; /* Fond sombre en mode nuit */
+  color: white; /* Texte blanc en mode nuit */
 }
 
 img {

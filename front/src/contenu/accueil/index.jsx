@@ -15,7 +15,7 @@ function Accueil(props) {
         <p>
           <span className="titre">Nous sommes heureux de vous accueillir</span>
         </p>
-       
+      
       </div>
       <div className="deproduits">
         <div>

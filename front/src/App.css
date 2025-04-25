@@ -5,6 +5,54 @@ body{
   overflow-x: hidden;
 }
 
+.dark-mode, .light-mode {
+  transition: background-color 0.5s ease, color 0.5s ease; /* Transition fluide pour le fond et le texte */
+}
+
+.navbar {
+  background-color: white; /* Fond blanc par défaut */
+  transition: background-color 0.5s ease; /* Transition fluide */
+}
+
+.dark-mode .navbar {
+  background-color: #444; /* Fond sombre en mode nuit */
+}
+
+.dark-mode {
+  background-color: #302f2f !important;
+  color: white !important;
+}
+
+.light-mode {
+  background-color: var(--bs-gray-200) !important;
+  color: black !important;
+}
+
+.toggle-dark-mode {
+  position: fixed;
+  top: 10px;
+  right: 10px; /* Le bouton reste à droite */
+  padding: 10px 20px;
+  background-color: #007bff; /* Couleur de fond */
+  color: white; /* Couleur du texte */
+  border: none;
+  border-radius: 50px; /* Bordures arrondies pour un look moderne */
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Ombre pour un effet de profondeur */
+  transition: all 0.3s ease; /* Transition fluide pour les interactions */
+  z-index: 1000; /* Assure que le bouton reste au-dessus des autres éléments */
+}
+
+.toggle-dark-mode:hover {
+  background-color: #0056b3; /* Couleur plus foncée au survol */
+  transform: scale(1.1); /* Agrandissement léger au survol */
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2); /* Accentuation de l'ombre au survol */
+}
+
+
+
 h1, h2, h3, h4, h5, h6, p, button, a{
   font-family: 'Poppins', sans-serif;
 }
