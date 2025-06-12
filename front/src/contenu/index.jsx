@@ -7,6 +7,7 @@ import Confidentialite from "./confidentialite";
 import Compte from "./compte";
 import Matchs from "./matchs";
 import ArticleUrl from "./accueil/articleUrl/articleurl";
+import FicheProduit from "./accueil/article/FicheProduit";
 
 function Contenu(props) {
   const [panier, setPanier] = useState([]);
@@ -20,6 +21,10 @@ function Contenu(props) {
         <Route path="/matchs" element={<Matchs equipes={props.equipes} />} />
         <Route path="/article/:id" element={<ArticleUrl articles={props.articles}/>} />
         <Route path="/confidentialite" element={<Confidentialite />} />
+        <Route 
+          path="/produit/:id" 
+          element={<FicheProduit panier={panier} setPanier={setPanier} />} 
+        />
       </Routes>
     </div>
   );
