@@ -3,6 +3,7 @@ import "./boutique.css";
 import Produit from "./Produit";
 import api from "../../api";
 
+
 function Boutique(props) {
   const [showCart, setShowCart] = useState(false);
 
@@ -169,6 +170,7 @@ function Boutique(props) {
                     onClick={() => commander()}
                   >
                     Commander
+                    
                   </button>
                 </div>
               ) : (

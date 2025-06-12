@@ -6,6 +6,7 @@ import api from './api';
 import Contenu from './contenu';
 
 
+
 function App() {
   const [user, setUser] = useState();
   const [equipes, setEquipes] = useState([]);
@@ -59,6 +60,7 @@ function App() {
             {isDarkMode ? 'Mode Jour' : 'Mode Nuit'}
           </button>
           <Contenu user={user} equipes={equipes} articles={articles} />
+          
         </div>
       </div>
     </Router>

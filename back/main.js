@@ -4,10 +4,20 @@ const session = require("express-session");
 const bcrypt = require("bcrypt");
 const uuid = require("uuid");
 const dotenv = require("dotenv");
+const cors = require("cors");
 
+// Charger les variables d'environnement EN PREMIER
+require('dotenv').config({ path: './back/.env' });
 dotenv.config();
 
+// Initialiser Stripe APRÈS avoir chargé les variables d'environnement
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
 const app = express();
+const router = express.Router(); // Ajout du router manquant
+
+// Middleware pour gérer les sessions
+app.use(cors());
 app.use(express.json());
 app.use(
   session({
@@ -562,7 +572,126 @@ app.delete("/api/user/delete", (req, res) => {
   });
 });
 
-require('dotenv').config({ path: './back/.env' });  
+
+
+app.post("/api/create-payment-intent", async (req, res) => {
+  const { amount, commande_id } = req.body;
+
+  console.log("📝 Demande de Payment Intent:", { amount, commande_id });
+
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: "Montant invalide" });
+  }
+
+  try {
+    // 1. Créer le Payment Intent avec Stripe
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // convertir en centimes
+      currency: "eur",
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
+
+    console.log("✅ Payment Intent créé:", paymentIntent.id);
+
+    // 2. Sauvegarder en base de données (AVEC pool au lieu de db)
+    const paiementId = uuid.v4();
+    const insertPaiementQuery = `
+      INSERT INTO paiements (
+        id, 
+        payment_intent_id, 
+        commande_id, 
+        montant, 
+        devise, 
+        statut, 
+        date_creation
+      ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+    `;
+
+    await pool.promise().execute(insertPaiementQuery, [
+      paiementId,
+      paymentIntent.id,
+      commande_id || null,
+      amount,
+      'EUR',
+      'pending'
+    ]);
+
+    console.log("✅ Paiement sauvegardé en BDD:", paiementId);
+
+    res.json({ 
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      paiementId: paiementId
+    });
+
+  } catch (err) {
+    console.error("❌ Erreur:", err);
+    
+    // Si erreur de base de données mais Payment Intent créé
+    if (err.code && err.code.startsWith('ER_')) {
+      console.error("❌ Erreur BDD:", err.message);
+      return res.status(500).json({ error: "Erreur de sauvegarde en base de données" });
+    }
+    
+    // Erreur Stripe
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Route pour mettre à jour le statut du paiement
+app.post("/api/update-payment-status", async (req, res) => {
+  const { payment_intent_id, statut, commande_id } = req.body;
+
+  console.log("🔄 Mise à jour statut paiement:", { payment_intent_id, statut, commande_id });
+
+  try {
+    // Mettre à jour le statut du paiement
+    const updateQuery = `
+      UPDATE paiements 
+      SET statut = ?, date_mise_a_jour = NOW() 
+      WHERE payment_intent_id = ?
+    `;
+
+    const [result] = await pool.promise().execute(updateQuery, [statut, payment_intent_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Paiement non trouvé" });
+    }
+
+    // Si le paiement est réussi et qu'on a un commande_id, mettre à jour le statut de la commande
+    if (statut === 'succeeded' && commande_id) {
+      const updateCommandeQuery = `
+        UPDATE commande 
+        SET statut_paiement = 'paye', date_paiement = NOW() 
+        WHERE id = ?
+      `;
+
+      try {
+        await pool.promise().execute(updateCommandeQuery, [commande_id]);
+        console.log("✅ Statut commande mis à jour:", commande_id);
+      } catch (commandeError) {
+        console.error("⚠️ Erreur mise à jour commande (non bloquant):", commandeError);
+        // On ne bloque pas la réponse même si la mise à jour de la commande échoue
+      }
+    }
+
+    console.log("✅ Statut paiement mis à jour:", statut);
+    res.json({ 
+      success: true, 
+      message: "Statut mis à jour",
+      payment_intent_id: payment_intent_id,
+      commande_id: commande_id 
+    });
+
+  } catch (err) {
+    console.error("❌ Erreur mise à jour:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 require('./archiveUsers');
 
