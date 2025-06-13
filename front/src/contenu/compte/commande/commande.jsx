@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "../../../api";
+import StripeContainer from "../../Stripe/StripeContainer";
 import "./commande.css";
 
 const CommandePage = () => {
@@ -21,31 +22,50 @@ const CommandePage = () => {
 
     fetchCommandes();
   }, []);
-  console.log(commandes);
-  console.log(commandes.produits);
+
+  // Fonction pour calculer le total d'une commande
+  const calculateTotal = (produits) => {
+    return produits.reduce((total, product) => {
+      return total + (product.prix * product.quantity);
+    }, 0);
+  };
+
   return (
     <div>
       {commandes &&
-        commandes.map((commande, index) => (
-          <div className="cont" key={index}>
-            <p>Commande effectue le : {commande.date}</p>
-            <p>Produits commander:</p>
+        commandes.map((commande, index) => {
+          const totalAmount = calculateTotal(commande.produits);
+          
+          return (
+            <div className="cont" key={index}>
+              <p>Commande effectuée le : {commande.date}</p>
+              <p>Produits commandés:</p>
 
-            <div className="blockcard">
-              {commande.produits.map((product, index) => (
-                <div className="card-bodynew" key={index}>
-                  <div className="d-flex align-items-center ">
-                    <img className="imagecommande" src={product.image} alt="" />{" "}
-                    <p className="nbcommande">{product.quantity} X</p>
+              <div className="blockcard">
+                {commande.produits.map((product, productIndex) => (
+                  <div className="card-bodynew" key={productIndex}>
+                    <div className="d-flex align-items-center">
+                      <img className="imagecommande" src={product.image} alt="" />
+                      <p className="nbcommande">{product.quantity} X</p>
+                    </div>
+                    <h5>{product.prix} €</h5>
+                    <p className="descriptionproduits">{product.description}</p>
                   </div>
-
-                  <h5>{product.prix} €</h5>
-                  <p className="descriptionproduits">{product.description}</p>
+                ))}
+                
+                <div className="total-section">
+                  <h4>Total: {totalAmount.toFixed(2)} €</h4>
                 </div>
-              ))}
+                
+                {/* Passer l'ID de commande et le montant total */}
+                <StripeContainer 
+                  amount={totalAmount}
+                  commande_id={commande.id}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
     </div>
   );
 };
