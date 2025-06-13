@@ -5,7 +5,6 @@ import Modal from "../components/Modal";
 import api from "../api";
 import { useEffect } from "react";
 
-
 function Navbar(props) {
   const [openLogin, setOpenLogin] = React.useState(false);
   const [openRegister, setOpenRegister] = React.useState(false);
@@ -98,7 +97,7 @@ function Navbar(props) {
         </form>
       </Modal>
 
-      <div class="overflow-hidden nav-wrapper" style={props.navbarOpen ? { maxWidth: "300px" } : { maxWidth: 0 }} >
+      <div className="overflow-hidden nav-wrapper" style={props.navbarOpen ? { maxWidth: "300px" } : { maxWidth: 0 }} >
         <nav>
             <div className="topnav">
               <img src="src/assets/téléchargement.jpg" className="" alt="" />
@@ -129,6 +128,16 @@ function Navbar(props) {
                     <i className="bi bi-box-arrow-right" color="white"></i>
                     Deconnexion
                   </button>
+                   {props.user.fonction === "admin" && (
+      <button
+        type="button"
+        className="btn btn-info"
+        onClick={() => navigate("/admin/commandes")}
+      >
+        <i className="bi bi-speedometer2"></i>
+        Admin Dashboard
+      </button>
+    )}
                 </>
                 :
                 <>

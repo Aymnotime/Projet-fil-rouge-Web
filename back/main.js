@@ -4,16 +4,32 @@ const session = require("express-session");
 const bcrypt = require("bcrypt");
 const uuid = require("uuid");
 const dotenv = require("dotenv");
+const isAdmin = require('./isAdmin');
+const cors = require('cors');
+const PDFDocument = require("pdfkit");
 
 dotenv.config();
 
 const app = express();
+
+// Configuration CORS - IMPORTANT: assurez-vous que le port est correct
+app.use(cors({
+  origin: 'http://localhost:3001', // adapte selon le port de ton front
+  credentials: true               // essentiel pour les cookies de session
+}));
+
 app.use(express.json());
 app.use(
   session({
     secret: "dsof82445qs*2E",
     resave: false,
     saveUninitialized: true,
+    cookie: {
+      // Configurer les cookies pour qu'ils fonctionnent en développement
+      secure: false, // Mettre à true en production avec HTTPS
+      sameSite: 'lax', // Protection CSRF de base
+      maxAge: 24 * 60 * 60 * 1000 // 1 jour
+    }
   })
 );
 
@@ -32,6 +48,225 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0,
 });
 
+// Middleware de log pour les requêtes (débogage)
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
+  next();
+});
+
+app.get("/api/admin/commandes", isAdmin, (req, res) => {
+  // Ici, req.session.user est garanti d'être défini et admin
+  res.send("Bienvenue sur le dashboard admin !");
+});
+
+// Retourne tous les utilisateurs (admin seulement)
+app.get("/api/admin/utilisateurs", isAdmin, (req, res) => {
+  pool.query("SELECT id, nom, prenom, email, fonction FROM utilisateur", (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, utilisateurs: rows });
+    }
+  });
+});
+
+// Retourne les commandes d'un utilisateur (admin seulement)
+app.get("/api/admin/commandes/:id_utilisateur", isAdmin, (req, res) => {
+  const userId = req.params.id_utilisateur;
+  pool.query("SELECT * FROM commande WHERE id_utilisateur = ?", [userId], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, commandes: rows });
+    }
+  });
+});
+
+// Mettre à jour le statut d'une commande (admin seulement)
+app.put("/api/admin/commandes/:id/statut", isAdmin, (req, res) => {
+  const { id } = req.params;
+  const { statutPaiement } = req.body;
+  
+  if (!statutPaiement) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Le statut de paiement est requis" 
+    });
+  }
+  
+  // Vérifier que le statut est valide
+  const statutsValides = ["En attente", "Payé", "Commande en cours", "Expédition de la commande", "Livré"];
+  if (!statutsValides.includes(statutPaiement)) {
+    return res.status(400).json({
+      success: false,
+      message: "Statut de paiement non valide"
+    });
+  }
+  
+  // Mise à jour dans la base de données - utiliser statut_paiement comme nom de colonne
+  pool.query(
+    "UPDATE commande SET statut_paiement = ? WHERE id = ?", 
+    [statutPaiement, id],
+    (err, result) => {
+      if (err) {
+        console.error("Erreur lors de la mise à jour du statut:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Erreur serveur lors de la mise à jour du statut"
+        });
+      }
+      
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Commande non trouvée"
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: "Statut de la commande mis à jour avec succès"
+      });
+    }
+  );
+});
+
+// Retourne tous les produits (admin seulement)
+app.get("/api/admin/produits", isAdmin, (req, res) => {
+  pool.query("SELECT * FROM stock", (err, rows) => {
+    if (err) {
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      res.send({ success: true, produits: rows });
+    }
+  });
+});
+
+// Ajouter un nouveau produit (admin seulement)
+app.post("/api/admin/produits", isAdmin, (req, res) => {
+  console.log("Requête reçue pour ajouter un produit:", req.body);
+  
+  const { nom, prix, description, quantite, image } = req.body;
+
+  // Validation de base
+  if (!nom || !prix) {
+    return res.status(400).json({
+      success: false,
+      message: "Le nom et le prix sont obligatoires"
+    });
+  }
+
+  // Générer un ID unique
+  const id = uuid.v4();
+  console.log("ID généré pour le nouveau produit:", id);
+  
+  pool.query(
+    "INSERT INTO stock (id, nom, prix, description, quantite, image) VALUES (?, ?, ?, ?, ?, ?)",
+    [id, nom, parseFloat(prix).toFixed(2), description || "", quantite || 0, image || ""],
+    (err, result) => {
+      if (err) {
+        console.error("Erreur lors de l'ajout du produit:", err);
+        return res.status(500).json({ 
+          success: false, 
+          message: "Erreur lors de l'ajout du produit",
+          error: err.message
+        });
+      }
+      
+      console.log("Produit ajouté avec succès, ID:", id);
+      return res.json({
+        success: true,
+        message: "Produit ajouté avec succès",
+        produit: {
+          id,
+          nom,
+          prix: parseFloat(prix).toFixed(2),
+          description: description || "",
+          quantite: quantite || 0,
+          image: image || ""
+        }
+      });
+    }
+  );
+});
+
+// Ajouter un produit avec image URL explicite (admin seulement)
+app.post("/api/admin/produits/with-image", isAdmin, (req, res) => {
+  const { nom, prix, description, imageUrl } = req.body;
+
+  if (!nom || !prix) {
+    return res.status(400).json({
+      success: false,
+      message: "Le nom et le prix sont obligatoires"
+    });
+  }
+
+  const id = uuid.v4();
+  
+  pool.query(
+    "INSERT INTO stock (id, nom, prix, description, image) VALUES (?, ?, ?, ?, ?)",
+    [id, nom, parseFloat(prix).toFixed(2), description || "", imageUrl || ""],
+    (err, result) => {
+      if (err) {
+        console.error("Erreur lors de l'ajout du produit:", err);
+        return res.status(500).json({ 
+          success: false, 
+          message: "Erreur lors de l'ajout du produit",
+          error: err.message
+        });
+      }
+      
+      return res.json({
+        success: true,
+        message: "Produit ajouté avec succès",
+        produit: {
+          id,
+          nom,
+          prix: parseFloat(prix).toFixed(2),
+          description: description || "",
+          image: imageUrl || ""
+        }
+      });
+    }
+  );
+});
+
+// Supprimer un utilisateur (admin seulement)
+app.delete("/api/admin/utilisateurs/:id", isAdmin, (req, res) => {
+  const id = req.params.id;
+  pool.query("DELETE FROM utilisateur WHERE id = ?", [id], (err, result) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true });
+    }
+  });
+});
+
+// Supprimer une commande (admin seulement)
+app.delete("/api/admin/commandes/:id", isAdmin, (req, res) => {
+  const id = req.params.id;
+  pool.query("DELETE FROM commande WHERE id = ?", [id], (err, result) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true });
+    }
+  });
+});
+
+// Supprimer un produit (admin seulement)
+app.delete("/api/admin/produits/:id", isAdmin, (req, res) => {
+  const id = req.params.id;
+  pool.query("DELETE FROM stock WHERE id = ?", [id], (err, result) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true });
+    }
+  });
+});
+
 app.get("/api", (req, res) => {
   res.send("API is up");
 });
@@ -45,35 +280,136 @@ app.get("/api/user", (req, res) => {
 });
 
 app.post("/api/user", (req, res) => {
-    if (!req.session.user) {
-        res.send({ success: false, message: "Non connecté" });
-        return;
+  if (!req.session.user) {
+    res.send({ success: false, message: "Non connecté" });
+    return;
+  }
+
+  const { nom, prenom, email } = req.body;
+
+  if (!nom || !prenom || !email) {
+    res.send({ success: false, message: "Veuillez remplir tous les champs" });
+    return;
+  }
+
+  if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+    res.send({ success: false, message: "Email invalide" });
+    return;
+  }
+
+  const id = req.session.user.id;
+
+  pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      req.session.user.nom = nom;
+      req.session.user.prenom = prenom;
+      req.session.user.email = email;
+      res.send({ success: true, message: "success" });
     }
+  });
+});
 
-    const { nom, prenom, email } = req.body;
+app.post("/api/login", (req, res) => {
+  const email = req.body.email;
+  const password = req.body.password;
 
-    if (!nom || !prenom || !email) {
-        res.send({ success: false, message: "Veuillez remplir tous les champs" });
+  console.log("Tentative de connexion:", email);
+  
+  if (!email || !password) {
+    res.send({ success: false, message: "Veuillez remplir tous les champs" });
+    return;
+  }
+
+  // 1. Vérifier si l'utilisateur est archivé
+  pool.query(
+    "SELECT * FROM utilisateur_archive WHERE email = ?",
+    [email],
+    (err, archivedRows) => {
+      if (err) {
+        console.error("Erreur vérification utilisateur archivé:", err);
+        res.status(500).send({ success: false, error: err.message });
         return;
-    }
+      }
 
-    if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-        res.send({ success: false, message: "Email invalide" });
+      if (archivedRows.length > 0) {
+        // Utilisateur archivé => bloqué
+        res.send({
+          success: false,
+          message: "Ce compte a été archivé et ne peut plus se connecter.",
+        });
         return;
-    }
+      }
 
-    const id = req.session.user.id;
+      // 2. Vérifier dans la table utilisateur normale
+      pool.query(
+        "SELECT * FROM utilisateur WHERE email = ?",
+        [email],
+        (err, rows) => {
+          if (err) {
+            console.error("Erreur recherche utilisateur:", err);
+            res.status(500).send({ success: false, error: err.message });
+            return;
+          } 
+          
+          if (rows.length > 0) {
+            const user = rows[0];
+            
+            bcrypt.compare(password, user.mdp, (err, result) => {
+              if (err) {
+                console.error("Erreur comparaison mot de passe:", err);
+                res.status(500).send({ success: false, error: err.message });
+                return;
+              }
+              
+              if (result) {
+                // Vérifier le rôle si accès admin est demandé
+                if (req.body.requireAdmin && user.fonction !== 'admin') {
+                  res.send({ success: false, message: "Accès réservé aux administrateurs" });
+                  return;
+                }
 
-    pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, rows) => {
-        if (err) {
-            res.send({ success: false, message: err });
-        } else {
-            req.session.user.nom = nom;
-            req.session.user.prenom = prenom;
-            req.session.user.email = email;
-            res.send({ success: true, message: "success" });
+                // 🔁 Mettre à jour la date de dernière connexion
+                pool.query(
+                  "UPDATE utilisateur SET derniere_connexion = NOW() WHERE id = ?",
+                  [user.id],
+                  (updateErr) => {
+                    if (updateErr) {
+                      console.error("Erreur mise à jour dernière connexion:", updateErr);
+                    }
+                  }
+                );
+
+                req.session.user = {
+                  id: user.id,
+                  nom: user.nom,
+                  prenom: user.prenom,
+                  email: user.email,
+                  fonction: user.fonction,
+                };
+                
+                console.log("Connexion réussie pour", email, "- fonction:", user.fonction);
+                res.send({ success: true, message: "success", user: req.session.user });
+              } else {
+                console.log("Échec connexion - mot de passe incorrect pour", email);
+                res.send({
+                  success: false,
+                  message: "Mot de passe ou email incorrect",
+                });
+              }
+            });
+          } else {
+            console.log("Échec connexion - utilisateur non trouvé:", email);
+            res.send({
+              success: false,
+              message: "Mot de passe ou email incorrect",
+            });
+          }
         }
-    });
+      );
+    }
+  );
 });
 
 app.post("/api/password", (req, res) => {
@@ -179,44 +515,46 @@ app.post("/api/commande", (req, res) => {
 });
 
 app.get("/api/commandes", (req, res) => {
-    if (!req.session.user) {
-        res.send({ success: false, message: "Non connecté" });
+  if (!req.session.user) {
+    return res.status(401).send({ success: false, message: "Non connecté" });
+  }
+
+  pool.query('SELECT * FROM commande WHERE id_utilisateur = ?', [req.session.user.id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+      return;
     }
 
-    pool.query('SELECT * FROM commande WHERE id_utilisateur = ?', [req.session.user.id], (err, rows) => {
-        if (err) {
-            res.send({ success: false, message: err });
-        }
+    const commands = rows;
+    pool.query('SELECT * FROM stock', (err, rows) => {
+      if (err) {
+        res.send({ success: false, message: err });
+        return;
+      }
 
-        const commands = rows;
-        pool.query('SELECT * FROM stock', (err, rows) => {
-            if (err) {
-                res.send({ success: false, message: err });
-            }
-
-            const stock = rows;
-            const commandsWithProducts = commands.map((command) => {
-                const products = JSON.parse(command.produits);
-                const productsWithDetails = products.map((product) => {
-                    const productDetails = stock.find((p) => p.id === product.id);
-                    return {
-                        ...product,
-                        nom: productDetails.nom,
-                        prix: productDetails.prix,
-                        image: productDetails.image,
-                        description: productDetails.description,
-                    };
-                });
-
-                return {
-                    ...command,
-                    produits: productsWithDetails,
-                };
-            });
-
-            res.send({ success: true, commands: commandsWithProducts });
+      const stock = rows;
+      const commandsWithProducts = commands.map((command) => {
+        const products = JSON.parse(command.produits);
+        const productsWithDetails = products.map((product) => {
+          const productDetails = stock.find((p) => p.id === product.id);
+          return {
+            ...product,
+            nom: productDetails.nom,
+            prix: productDetails.prix,
+            image: productDetails.image,
+            description: productDetails.description,
+          };
         });
+
+        return {
+          ...command,
+          produits: productsWithDetails,
+        };
+      });
+
+      res.send({ success: true, commands: commandsWithProducts });
     });
+  });
 });
 
 app.get("/api/equipes", (req, res) => {
@@ -239,16 +577,6 @@ app.get('/api/articles', (req, res) => {
     });
 });
 
-app.get('/api/articles', (req, res) => {
-    pool.query('SELECT * FROM article', (err, rows) => {
-        if (err) {
-            res.send({ 'success': false, 'message': err });
-        } else {
-            res.send({ 'success': true, 'articles': rows });
-        }
-    });
-});
-
 app.get("/api/produits", (req, res) => {
   pool.query("SELECT * FROM stock", (err, rows) => {
     if (err) {
@@ -259,9 +587,10 @@ app.get("/api/produits", (req, res) => {
   });
 });
 
+// Corriger cette route pour utiliser la table stock au lieu de produits
 app.delete("/api/produits/:id", (req, res) => {
   const id = req.params.id;
-  pool.query("DELETE FROM produits WHERE id = ?", [id], (err, rows) => {
+  pool.query("DELETE FROM stock WHERE id = ?", [id], (err, rows) => {
     if (err) {
       res.send({ success: false, message: err });
     } else {
@@ -270,20 +599,32 @@ app.delete("/api/produits/:id", (req, res) => {
   });
 });
 
+// Corriger cette route pour utiliser la table stock au lieu de produits
 app.post("/api/produits", (req, res) => {
   const nom = req.body.nom;
-  const quantite = req.body.quantite;
+  const quantite = req.body.quantite || 0;
   const prix = req.body.prix;
-  const description = req.body.description;
+  const description = req.body.description || "";
   const id = uuid.v4();
+  
   pool.query(
-    "INSERT INTO produits (nom, quantite, prix, description, id) VALUES (?, ?, ?, ?, ?)",
-    [nom, quantite, prix, description, id],
+    "INSERT INTO stock (id, nom, quantite, prix, description) VALUES (?, ?, ?, ?, ?)",
+    [id, nom, quantite, prix, description],
     (err, rows) => {
       if (err) {
         res.send({ success: false, message: err });
       } else {
-        res.send({ success: true, message: "success" });
+        res.send({ 
+          success: true, 
+          message: "success",
+          produit: {
+            id,
+            nom,
+            quantite,
+            prix,
+            description
+          }
+        });
       }
     }
   );
@@ -302,118 +643,18 @@ app.get("/api/annonces", (req, res) => {
   res.send(annonces);
 });
 
-app.post("/api/login", (req, res) => {
-  const email = req.body.email;
-  const password = req.body.password;
-
-  if (!email || !password) {
-    res.send({ success: false, message: "Veuillez remplir tous les champs" });
-    return;
-  }
-
-  // 1. Vérifier si l'utilisateur est archivé
-  pool.query(
-    "SELECT * FROM utilisateur_archive WHERE email = ?",
-    [email],
-    (err, archivedRows) => {
-      if (err) {
-        res.send({ error: err });
-        return;
-      }
-
-      if (archivedRows.length > 0) {
-        // Utilisateur archivé => bloqué
-        res.send({
-          success: false,
-          message: "Ce compte a été archivé et ne peut plus se connecter.",
-        });
-        return;
-      }
-
-      // 2. Vérifier dans la table utilisateur normale
-      pool.query(
-        "SELECT * FROM utilisateur WHERE email = ?",
-        [email],
-        (err, rows) => {
-          if (err) {
-            res.send({ error: err });
-          } else {
-            if (rows.length > 0) {
-              bcrypt.compare(password, rows[0].mdp, (err, result) => {
-                if (result) {
-                  const user = rows[0];
-
-                  // 🔁 Mettre à jour la date de dernière connexion
-                  pool.query(
-                    "UPDATE utilisateur SET derniere_connexion = NOW() WHERE id = ?",
-                    [user.id],
-                    (updateErr) => {
-                      if (updateErr) {
-                        console.error("Erreur mise à jour dernière connexion :", updateErr);
-                      }
-                    }
-                  );
-
-                  req.session.user = {
-                    id: user.id,
-                    nom: user.nom,
-                    prenom: user.prenom,
-                    email: user.email,
-                    fonction: user.fonction,
-                  };
-
-                  res.send({ success: true, message: "success" });
-                } else {
-                  res.send({
-                    success: false,
-                    message: "Mot de passe ou email incorrect",
-                  });
-                }
-              });
-            } else {
-              res.send({
-                success: false,
-                message: "Mot de passe ou email incorrect",
-              });
-            }
-          }
-        }
-      );
-    }
-  );
-});
-
-
-app.delete("/api/user", (req, res) => {
-  if (!req.session.user) {
-    res.send({ success: false, message: "Non connecté" });
-    return;
-  }
-
-  const userId = req.session.user.id;
-
-  // Supprimer ou anonymiser les données associées
-  pool.query(
-    `
-    DELETE FROM commande WHERE id_utilisateur = ?;
-    DELETE FROM adresse WHERE id_utilisateur = ?;
-    UPDATE utilisateur SET nom = 'Anonyme', prenom = 'Anonyme', email = CONCAT('anonyme_', id, '@example.com'), mdp = '', fonction = 'anonyme' WHERE id = ?;
-    `,
-    [userId, userId, userId],
-    (err, result) => {
-      if (err) {
-        res.send({ success: false, message: err });
-      } else {
-        // Détruire la session après suppression
-        req.session.destroy();
-        res.send({ success: true, message: "Compte utilisateur supprimé avec succès" });
-      }
-    }
-  );
-});
 app.get("/api/logout", (req, res) => {
-  req.session.destroy();
-  res.send({ success: true, message: "success" });
+  const userEmail = req.session.user?.email;
+  console.log("Déconnexion utilisateur:", userEmail);
+  
+  req.session.destroy(err => {
+    if (err) {
+      console.error("Erreur lors de la destruction de la session:", err);
+      res.status(500).send({ success: false, message: "Erreur de déconnexion" });
+    } else {
+      res.send({ success: true, message: "success" });
+    }
+  });
 });
 
 app.post("/api/register", (req, res) => {
@@ -490,8 +731,6 @@ app.post("/api/register", (req, res) => {
   });
 });
 
-const PDFDocument = require("pdfkit"); // Importer pdfkit
-
 app.get("/api/user/pdf", (req, res) => {
   if (!req.session.user) {
     res.status(401).send({ success: false, message: "Non connecté" });
@@ -519,10 +758,9 @@ app.get("/api/user/pdf", (req, res) => {
   doc.text(`Fonction : ${user.fonction}`);
   doc.moveDown();
 
-  // Terminer le PDF
+ 
   doc.end();
 });
-
 
 app.delete("/api/user/delete", (req, res) => {
   if (!req.session.user) {
@@ -532,7 +770,7 @@ app.delete("/api/user/delete", (req, res) => {
 
   const userId = req.session.user.id;
 
-  // Supprimer les données associées dans la table commande
+  
   pool.query("DELETE FROM commande WHERE id_utilisateur = ?", [userId], (err) => {
     if (err) {
       console.error("Erreur SQL (commande) :", err);
@@ -540,7 +778,7 @@ app.delete("/api/user/delete", (req, res) => {
       return;
     }
 
-    // Supprimer l'utilisateur
+
     pool.query("DELETE FROM utilisateur WHERE id = ?", [userId], (err) => {
       if (err) {
         console.error("Erreur SQL (utilisateur) :", err);
@@ -548,7 +786,6 @@ app.delete("/api/user/delete", (req, res) => {
         return;
       }
 
-      // Détruire la session après suppression
       req.session.destroy((err) => {
         if (err) {
           console.error("Erreur destruction session :", err);
@@ -560,6 +797,23 @@ app.delete("/api/user/delete", (req, res) => {
       });
     });
   });
+});
+
+
+app.post('/api/check-admin', (req, res) => {
+  if (req.session.user && req.session.user.fonction === 'admin') {
+    res.json({ 
+      isAdmin: true, 
+      user: {
+        id: req.session.user.id,
+        nom: req.session.user.nom,
+        email: req.session.user.email,
+        fonction: req.session.user.fonction
+      }
+    });
+  } else {
+    res.json({ isAdmin: false });
+  }
 });
 
 require('dotenv').config({ path: './back/.env' });  

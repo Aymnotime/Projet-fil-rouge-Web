@@ -1,0 +1,1573 @@
+import React, { useEffect, useState, useRef } from 'react';
+import api from '../api';
+
+// Fonction pour vérifier si une URL d'image est valide
+const isValidImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  
+  // Vérifier si c'est une URL basique
+  try {
+    new URL(url);
+    // Vérifier les extensions d'image courantes
+    const extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+    return extensions.some(ext => url.toLowerCase().endsWith(ext)) || 
+          url.includes('placeholder.com') ||
+          url.includes('picsum.photos');
+  } catch (e) {
+    return false;
+  }
+};
+
+const AdminDashboard = () => {
+  const [utilisateurs, setUtilisateurs] = useState([]);
+  const [commandes, setCommandes] = useState([]);
+  const [produits, setProduits] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showProduits, setShowProduits] = useState(false);
+  const [error, setError] = useState("");
+  const [statusUpdating, setStatusUpdating] = useState(null);
+  const [showAddProductForm, setShowAddProductForm] = useState(false);
+  const [newProduct, setNewProduct] = useState({ nom: "", prix: "", description: "", quantite: "0",  image: ""});
+  const [produitsMap, setProduitsMap] = useState({});
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [productSearchTerm, setProductSearchTerm] = useState("");
+
+
+  const filteredProducts = produits.filter(product => {
+    if (!productSearchTerm.trim()) return true;
+    
+    const searchLower = productSearchTerm.toLowerCase();
+    return product.nom && product.nom.toLowerCase().includes(searchLower);
+  });
+
+  // Fonction pour réinitialiser le formulaire
+  const resetForm = () => {
+    setNewProduct({ 
+      nom: "", 
+      prix: "", 
+      description: "", 
+      image: "",
+      quantite: "0"
+    });
+    setError("");
+  };
+  
+  useEffect(() => {
+    api.getAdminUtilisateurs()
+      .then(res => {
+        if (res.data.success) setUtilisateurs(res.data.utilisateurs);
+        else setError(res.data.message || "Erreur lors du chargement des utilisateurs");
+      })
+      .catch(() => setError("Erreur d'accès à l'API utilisateurs"));
+
+    // Charger tous les produits pour avoir accès aux images dans les commandes
+    api.getAdminProduits()
+      .then(res => {
+        if (res.data.success) {
+          setProduits(res.data.produits);
+          // Créer un map des produits par ID pour un accès facile
+          const map = {};
+          res.data.produits.forEach(prod => {
+            map[prod.id] = prod;
+          });
+          setProduitsMap(map);
+          console.log("Produits chargés:", res.data.produits.length, "Map créé:", Object.keys(map).length);
+        }
+      })
+      .catch((err) => {
+        console.error("Erreur chargement produits:", err);
+        setError("Erreur d'accès à l'API produits");
+      });
+  }, []);
+
+  // Filtrer les utilisateurs en fonction du terme de recherche
+  const filteredUsers = utilisateurs.filter(user => {
+    if (!searchTerm.trim()) return true;
+    
+    const searchLower = searchTerm.toLowerCase();
+    const nameMatch = user.nom && user.nom.toLowerCase().includes(searchLower);
+    const emailMatch = user.email && user.email.toLowerCase().includes(searchLower);
+    
+    return nameMatch || emailMatch;
+  });
+
+    // Fonction pour obtenir le nom d'un utilisateur par son ID
+  const getUserNameById = (userId) => {
+    const user = utilisateurs.find(u => u.id === userId);
+    return user ? user.nom : `Utilisateur ${userId}`;
+  };
+
+  const handleShowCommandes = (userId) => {
+    if (selectedUser === userId) {
+      setSelectedUser(null);
+      setCommandes([]);
+      return;
+    }
+    
+    setSelectedUser(userId);
+    
+    // S'assurer que les produits sont chargés avant de charger les commandes
+    let produitsPromise = Promise.resolve();
+    if (Object.keys(produitsMap).length === 0) {
+      console.log("Chargement préalable des produits nécessaire");
+      produitsPromise = api.getAdminProduits()
+        .then(res => {
+          if (res.data.success) {
+            setProduits(res.data.produits);
+            // Créer un map des produits par ID pour un accès facile
+            const map = {};
+            res.data.produits.forEach(prod => {
+              map[prod.id] = prod;
+            });
+            setProduitsMap(map);
+            console.log("Produits chargés avant commandes:", res.data.produits.length);
+          }
+        })
+        .catch(err => {
+          console.error("Erreur chargement produits:", err);
+        });
+    }
+    
+    // Ensuite charger les commandes
+    produitsPromise.then(() => {
+      api.getAdminCommandesByUser(userId)
+        .then(res => {
+          if (res.data.success) {
+            console.log("Commandes chargées:", res.data.commandes.length);
+            
+            // Analyser les données de commande pour extraire les quantités
+            const commandesProcessed = res.data.commandes.map(cmd => {
+              console.log(`Traitement commande ${cmd.id}, produits:`, cmd.produits);
+              
+              // Essayer de parser les produits si au format JSON
+              try {
+                // Tenter de parser en JSON si c'est une chaîne qui ressemble à un objet JSON
+                if (typeof cmd.produits === 'string' && (cmd.produits.trim().startsWith('{') || cmd.produits.trim().startsWith('['))) {
+                  try {
+                    const produitsObj = JSON.parse(cmd.produits);
+                    console.log(`Commande ${cmd.id} - JSON parsé:`, produitsObj);
+                    cmd.produitsDetails = produitsObj;
+                  } catch (e) {
+                    console.error(`Erreur parsing JSON commande ${cmd.id}:`, e);
+                  }
+                }
+                // Format id:qty
+                else if (typeof cmd.produits === 'string' && cmd.produits.includes(':')) {
+                  const produitsObj = {};
+                  cmd.produits.split(',').forEach(item => {
+                    const [id, qty] = item.split(':');
+                    produitsObj[id.trim()] = parseInt(qty, 10) || 1;
+                  });
+                  cmd.produitsDetails = produitsObj;
+                  console.log(`Commande ${cmd.id} - format id:qty détecté:`, produitsObj);
+                }
+              } catch (e) {
+                console.error(`Erreur traitement commande ${cmd.id}:`, e);
+              }
+              return cmd;
+            });
+            setCommandes(commandesProcessed);
+          }
+          else setError(res.data.message || "Erreur lors du chargement des commandes");
+        })
+        .catch((err) => {
+          console.error("Erreur chargement commandes:", err);
+          setError("Erreur d'accès à l'API commandes");
+        });
+    });
+  };
+
+  const handleToggleProduits = () => {
+    if (!showProduits) {
+      api.getAdminProduits()
+        .then(res => {
+          if (res.data.success) {
+            setProduits(res.data.produits);
+            // Mettre à jour le map des produits
+            const map = {};
+            res.data.produits.forEach(prod => {
+              map[prod.id] = prod;
+            });
+            setProduitsMap(map);
+          } else {
+            setError(res.data.message || "Erreur lors du chargement des produits");
+          }
+        })
+        .catch(() => setError("Erreur d'accès à l'API produits"));
+    }
+    setShowProduits(!showProduits);
+  };
+
+  // Fonction améliorée pour obtenir les IDs de produits et leurs quantités
+  const getProduitDetails = (commande) => {
+    try {
+      // Journaliser les données brutes pour débogage
+      console.log(`Commande ${commande.id} - données brutes:`, commande);
+      
+      // 1. Si nous avons des détails de produits déjà analysés
+      if (commande.produitsDetails) {
+        // Si c'est un objet {id: qty, id2: qty2}
+        if (typeof commande.produitsDetails === 'object' && !Array.isArray(commande.produitsDetails)) {
+          return Object.entries(commande.produitsDetails).map(([id, qty]) => ({
+            id,
+            quantite: parseInt(qty, 10) || 1
+          }));
+        }
+        
+        // Si c'est un tableau d'objets
+        if (Array.isArray(commande.produitsDetails)) {
+          return commande.produitsDetails.map(item => {
+            // Si l'élément est un objet avec un id
+            if (typeof item === 'object' && item !== null && item.id) {
+              // Vérifier toutes les propriétés possibles pour la quantité
+              const quantity = item.quantity || item.quantite || item.qty || 1;
+              console.log(`Produit ID ${item.id} - quantité extraite: ${quantity}`);
+              
+              return {
+                id: item.id.toString(),
+                quantite: parseInt(quantity, 10) || 1
+              };
+            }
+            // Si l'élément est juste un ID
+            return { id: item.toString(), quantite: 1 };
+          });
+        }
+      }
+      
+      // 2. Tentative de parsing du format JSON
+      if (typeof commande.produits === 'string') {
+        if (commande.produits.trim().startsWith('{') || commande.produits.trim().startsWith('[')) {
+          try {
+            const produitsObj = JSON.parse(commande.produits);
+            console.log(`Commande ${commande.id} - JSON parsé:`, produitsObj);
+            
+            // Objet {id: qty}
+            if (typeof produitsObj === 'object' && !Array.isArray(produitsObj)) {
+              return Object.entries(produitsObj).map(([id, qty]) => ({
+                id,
+                quantite: parseInt(qty, 10) || 1
+              }));
+            }
+            
+            // Tableau d'objets ou d'IDs
+            if (Array.isArray(produitsObj)) {
+              return produitsObj.map(item => {
+                if (typeof item === 'object' && item !== null && item.id) {
+                  const quantity = item.quantity || item.quantite || item.qty || 1;
+                  return {
+                    id: item.id.toString(),
+                    quantite: parseInt(quantity, 10) || 1
+                  };
+                }
+                return { id: item.toString(), quantite: 1 };
+              });
+            }
+          } catch (e) {
+            console.error(`Erreur parsing JSON commande ${commande.id}:`, e);
+          }
+        }
+        
+        // 3. Format "id:qty,id2:qty2"
+        if (commande.produits.includes(':')) {
+          const result = commande.produits.split(',').map(item => {
+            const parts = item.split(':');
+            const id = parts[0].trim();
+            const quantite = parseInt(parts[1], 10) || 1;
+            console.log(`Format id:qty - ID: ${id}, Quantité: ${quantite}`);
+            return { id, quantite };
+          });
+          return result;
+        }
+        
+        // 4. Format simple "id1,id2,id3"
+        return commande.produits.split(',').map(id => ({
+          id: id.trim(), 
+          quantite: 1
+        }));
+      }
+      
+      // 5. Si c'est un tableau natif
+      if (Array.isArray(commande.produits)) {
+        return commande.produits.map(item => {
+          if (typeof item === 'object' && item !== null && item.id) {
+            const quantity = item.quantity || item.quantite || item.qty || 1;
+            return {
+              id: item.id.toString(),
+              quantite: parseInt(quantity, 10) || 1
+            };
+          }
+          return { id: item.toString(), quantite: 1 };
+        });
+      }
+      
+      console.warn(`Format de données inconnu pour la commande ${commande.id}`);
+      return [];
+    } catch (e) {
+      console.error("Erreur extraction produits:", e, commande);
+      return [];
+    }
+  };
+
+  // Suppression utilisateur
+  const handleDeleteUser = (id) => {
+    if (window.confirm("Supprimer cet utilisateur ?")) {
+      api.deleteUser(id).then(() => {
+        setUtilisateurs(utilisateurs.filter(u => u.id !== id));
+        if (selectedUser === id) {
+          setSelectedUser(null);
+          setCommandes([]);
+        }
+      });
+    }
+  };
+
+  // Suppression commande
+  const handleDeleteCommande = (id) => {
+    if (window.confirm("Supprimer cette commande ?")) {
+      api.deleteCommande(id).then(() => {
+        setCommandes(commandes.filter(c => c.id !== id));
+      });
+    }
+  };
+
+  // Suppression produit
+  const handleDeleteProduit = (id) => {
+    if (window.confirm("Supprimer ce produit ?")) {
+      api.deleteProduit(id).then(() => {
+        setProduits(produits.filter(p => p.id !== id));
+        // Mettre à jour le map des produits
+        const newMap = {...produitsMap};
+        delete newMap[id];
+        setProduitsMap(newMap);
+      });
+    }
+  };
+
+  // Fonction pour formater la date et l'heure
+  const formatDateTime = (dateString) => {
+    if (!dateString) return "Date inconnue";
+    
+    try {
+      // Tenter de parser la date
+      const date = new Date(dateString);
+      
+      // Vérifier si la date est valide
+      if (isNaN(date.getTime())) return dateString;
+      
+      // Formater en DD/MM/YYYY HH:MM
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      
+      return `${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch (e) {
+      console.error("Erreur de formatage de date:", e);
+      return dateString;
+    }
+  };
+
+  // Gérer le changement de statut d'une commande
+  const handleChangeStatutCommande = (id, newStatut) => {
+    // Indiquer quelle commande est en cours de mise à jour
+    setStatusUpdating(id);
+    
+    // Appel à l'API pour mettre à jour le statut dans la base de données
+    api.updateCommandeStatut(id, newStatut)
+      .then(res => {
+        if (res.data && res.data.success) {
+          // Mise à jour réussie, mettre à jour l'état local
+          setCommandes(commandes.map(cmd => 
+            cmd.id === id ? {...cmd, statutPaiement: newStatut} : cmd
+          ));
+        } else {
+          // En cas d'erreur dans la réponse
+          setError(res.data?.message || "Erreur lors de la mise à jour du statut");
+        }
+      })
+      .catch(() => {
+        setError("Erreur de communication avec le serveur");
+      })
+      .finally(() => {
+        // Fin de la mise à jour, quelle que soit l'issue
+        setStatusUpdating(null);
+      });
+  };
+
+  // Redirection vers la fiche produit
+  const goToProductPage = (id) => {
+    window.location.href = `/produit/${id}`;
+  };
+
+  // Gérer l'affichage du formulaire d'ajout de produit
+  const handleShowAddProductForm = () => {
+    if (showAddProductForm) {
+      resetForm();
+    }
+    setShowAddProductForm(!showAddProductForm);
+  };
+
+  // Afficher/masquer la fiche produit détaillée
+  const handleToggleProductDetails = (product) => {
+    setSelectedProduct(selectedProduct && selectedProduct.id === product.id ? null : product);
+  };
+
+  // Gérer les changements dans le formulaire - AMÉLIORÉ pour la validation d'URL
+  const handleProductInputChange = (e) => {
+    const { name, value } = e.target;
+    
+    // Vérification spéciale pour les URL d'images
+    if (name === 'image' && value) {
+      if (!isValidImageUrl(value)) {
+        console.warn("L'URL saisie ne semble pas être une image valide");
+        // On peut continuer à accepter l'URL même si elle n'est pas reconnue comme image
+      }
+    }
+    
+    setNewProduct({
+      ...newProduct,
+      [name]: value
+    });
+  };
+
+  // Fonction utilitaire pour ajouter un nouveau produit à l'état
+  const ajouterNouveauProduit = (nouveauProduit) => {
+    setProduits(prevProduits => [...prevProduits, nouveauProduit]);
+    
+    // Mettre à jour la map des produits
+    setProduitsMap(prev => ({
+      ...prev,
+      [nouveauProduit.id]: nouveauProduit
+    }));
+    
+    // Réinitialiser le formulaire
+    resetForm();
+    setShowAddProductForm(false);
+    
+    // Message de succès temporaire
+    setError(`Produit "${nouveauProduit.nom}" ajouté avec succès!`);
+    setTimeout(() => setError(""), 3000);
+  };
+
+  // Ajouter un nouveau produit - Version corrigée pour l'ajout en base de données
+  const handleAddProduct = (e) => {
+    e.preventDefault();
+    
+    // Validation des données
+    if (!newProduct.nom.trim()) {
+      setError("Le nom du produit est requis");
+      return;
+    }
+
+    if (!newProduct.prix || isNaN(parseFloat(newProduct.prix)) || parseFloat(newProduct.prix) <= 0) {
+      setError("Le prix doit être un nombre positif");
+      return;
+    }
+
+    setError("");
+    setIsSubmitting(true);
+    
+    // Préparer les données du produit avec quantité
+    const productData = {
+      nom: newProduct.nom,
+      prix: parseFloat(newProduct.prix),
+      description: newProduct.description || "",
+      image: newProduct.image || "",
+      quantite: parseInt(newProduct.quantite) || 0
+    };
+    
+    console.log("Envoi du produit:", productData);
+    
+    // Appel à l'API avec les credentials pour assurer l'authentification
+    api.addProduit(productData)
+      .then(res => {
+        console.log("Réponse du serveur:", res.data);
+        
+        if (res.data && res.data.success) {
+          // Succès: ajouter à la liste des produits
+          const nouveauProduit = res.data.produit;
+          ajouterNouveauProduit(nouveauProduit);
+          
+          // Afficher un message de succès
+          setError(` Produit "${nouveauProduit.nom}" ajouté avec succès à la base de données!`);
+          setTimeout(() => setError(""), 3000);
+          
+          // Rafraîchir la liste des produits
+          api.getAdminProduits()
+            .then(res => {
+              if (res.data.success) {
+                setProduits(res.data.produits);
+                // Mettre à jour le map des produits
+                const map = {};
+                res.data.produits.forEach(prod => {
+                  map[prod.id] = prod;
+                });
+                setProduitsMap(map);
+              }
+            })
+            .catch(err => console.error("Erreur lors du rafraîchissement des produits:", err));
+        } else {
+          // Erreur de l'API avec un message
+          setError(` ${res.data?.message || "Erreur lors de l'ajout du produit"}`);
+        }
+      })
+      .catch(err => {
+        console.error("Erreur lors de l'ajout du produit:", err);
+        
+        if (err.response) {
+          // Erreur de réponse du serveur
+          setError(` Erreur ${err.response.status}: ${err.response.data?.message || "Problème lors de l'ajout du produit"}`);
+        } else if (err.request) {
+          // Pas de réponse reçue
+          setError(" Le serveur n'a pas répondu. Vérifiez votre connexion.");
+        } else {
+          // Autre erreur
+          setError(` Erreur: ${err.message}`);
+        }
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
+  };
+
+  // Fonction de débogage pour afficher les détails d'un produit
+  const debugProduct = (prodId) => {
+    console.log("Détails produit", prodId, ":", produitsMap[prodId]);
+    return produitsMap[prodId] ? 
+      `${produitsMap[prodId].nom} (${produitsMap[prodId].prix}€) - Image: ${produitsMap[prodId].image ? "Oui" : "Non"}` : 
+      "Produit non trouvé";
+  };
+
+  // Constantes pour le style commun
+  const containerStyle = {
+    maxWidth: "1200px",
+    margin: "0 auto",
+    padding: "0 20px"
+  };
+
+  return (
+    <div style={containerStyle}>
+      <h1
+        style={{
+          textAlign: "center",
+          color: "#007bff",
+          marginBottom: "32px"
+        }}
+      >
+        Tableau de bord administrateur
+      </h1>
+      {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
+
+      {/* Tableau des utilisateurs - MODIFIÉ: Réduction de taille */}
+      <table
+        border="1"
+        cellPadding="8"
+        style={{
+          borderCollapse: "collapse",
+          width: "90%", /* Réduit de 100% à 90% */
+          margin: "0 auto 20px auto", /* Centré avec marge auto */
+          tableLayout: "fixed",
+          maxWidth: "1000px" /* Limitation de la largeur maximale */
+        }}
+      >
+        <thead>
+  <tr style={{ background: "#007bff", color: "#fff" }}>
+    <th style={{ width: "25%" }}>Nom</th>
+    <th style={{ width: "35%" }}>Email</th>
+    <th style={{ width: "40%" }}>
+      <div style={{ 
+        display: "flex", 
+        justifyContent: "space-between", 
+        alignItems: "center" 
+      }}>
+        <span>Actions</span>
+        <div style={{ 
+          display: "flex", 
+          gap: "5px", 
+          alignItems: "center",
+          width: "180px",
+         // background: "#f0f0f0",
+          padding: "3px 8px",
+          borderRadius: "5px"
+        }}>
+          <input
+            type="text"
+            placeholder="Rechercher utilisateurs..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              padding: "4px",
+              borderRadius: "4px",
+              border: "1px solid #ccc",
+              width: "100%",
+              fontSize: "13px"
+            }}
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              style={{
+                background: "transparent",
+                color: "#666",
+                border: "none",
+                padding: "2px 5px",
+                cursor: "pointer",
+                fontSize: "14px"
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+    </th>
+  </tr>
+</thead>
+        <tbody>
+          {filteredUsers.length > 0 ? (
+            filteredUsers.map((user, idx) => (
+              <tr
+                key={user.id}
+                style={{
+                  background: idx % 2 === 0 ? "#f2f2f2" : "#e6e6e6"
+                }}
+              >
+                <td>{user.nom}</td>
+                <td>{user.email}</td>
+                <td style={{ textAlign: "left" }}> {/* Alignement à gauche pour éviter les chevauchements */}
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}> {/* Flexbox avec espace entre boutons */}
+                    <button
+                      style={{
+                        background: selectedUser === user.id ? "#b7202e" : "#24973f",
+                        color: "#fff",
+                        border: "none",
+                        padding: "8px 12px", /* Légère réduction de la taille horizontale */
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap" /* Empêche le texte de se couper sur plusieurs lignes */
+                      }}
+                      onClick={() => handleShowCommandes(user.id)}
+                    >
+                      {selectedUser === user.id ? "Fermer commandes" : "Voir commandes"}
+                    </button>
+                    <button
+                      style={{
+                        background: "#b7202e",
+                        color: "#fff",
+                        border: "none",
+                        padding: "8px 12px",
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => handleDeleteUser(user.id)}
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="3" style={{ textAlign: "center", padding: "15px" }}>
+                {searchTerm ? (
+                  <div>
+                    <p>Aucun utilisateur ne correspond à votre recherche.</p>
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      style={{
+                        background: "#6c757d",
+                        color: "#fff",
+                        border: "none",
+                        padding: "8px 16px",
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                        marginTop: "10px",
+                        marginLeft: "2%",
+                      }}
+                    >
+                      Afficher tous les utilisateurs
+                    </button>
+                  </div>
+                ) : (
+                  "Aucun utilisateur disponible."
+                )}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {/* Section des commandes d'un utilisateur */}
+      {selectedUser && (
+        <div style={{ marginTop: "25px", marginBottom: "25px" }}>
+          <h2 style={{ 
+  color: "#007bff", 
+  textAlign: "center", 
+  marginTop: "10px",
+  marginBottom: "15px"
+}}>
+  Commandes de {getUserNameById(selectedUser)}
+</h2>
+<table
+  border="1"
+  cellPadding="8"
+  style={{
+    borderCollapse: "collapse",
+    width: "95%",
+    margin: "0 auto 20px auto",
+    tableLayout: "fixed"
+  }}
+>
+  <thead>
+    <tr style={{ background: "#007bff", color: "#fff" }}>
+      <th style={{ width: "15%" }}>Reférences</th> {/* Élargi de 6% à 8% */}
+      <th style={{ width: "15%" }}>Date</th> {/* Suppression du paddingLeft dans l'en-tête */}
+      <th style={{ width: "40%" }}>Produits</th> {/* Réduit de 42% à 40% */}
+      <th style={{ width: "20%" }}>Statut paiement</th>
+      <th style={{ width: "18%" }}>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {commandes.map((cmd, idx) => (
+      <tr
+        key={cmd.id}
+        style={{
+          background: idx % 2 === 0 ? "#f2f2f2" : "#e6e6e6"
+        }}
+      >
+        <td style={{ 
+          textAlign: "center", 
+          
+        }}>
+          {cmd.id}
+        </td>
+        <td style={{ 
+          paddingLeft: "12px" /* Padding légèrement réduit mais maintenu pour l'espacement */
+          
+        }}>
+          {formatDateTime(cmd.date)}
+        </td>
+        <td>
+          <div style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            gap: "10px",
+            maxHeight: "250px",
+            overflowY: "auto"
+          }}>
+            {getProduitDetails(cmd).map(({id: prodId, quantite}) => {
+              const produit = produitsMap[prodId];
+              return (
+                <div 
+                  key={prodId} 
+                  style={{ 
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: "10px",
+                    backgroundColor: "rgba(255,255,255,0.5)",
+                    borderRadius: "5px",
+                    padding: "5px"
+                  }}
+                >
+                  <div 
+                    onClick={() => goToProductPage(prodId)}
+                    style={{ 
+                      cursor: "pointer", 
+                      position: "relative" 
+                    }}
+                    title={`Voir le produit: ${produit?.nom || 'Produit inconnu'}`}
+                  >
+                    <img 
+                      src={produit?.image || "https://via.placeholder.com/50?text=No+Image"} 
+                      alt={`${produit?.nom || 'Produit'} #${prodId}`}
+                      style={{ 
+                        width: "50px", 
+                        height: "50px", 
+                        objectFit: "cover",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                        transition: "transform 0.2s, box-shadow 0.2s"
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.transform = "scale(1.1)";
+                        e.currentTarget.style.boxShadow = "0 0 5px rgba(0,0,0,0.3)";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.transform = "scale(1)";
+                        e.currentTarget.style.boxShadow = "none";
+                      }}
+                    />
+                    <div 
+                      style={{ 
+                        position: "absolute", 
+                        top: "-5px", 
+                        right: "-5px", 
+                        backgroundColor: "#dc3545", 
+                        color: "white", 
+                        borderRadius: "50%", 
+                        width: "22px", 
+                        height: "22px",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        fontSize: "12px",
+                        fontWeight: "bold",
+                        border: "1px solid white"
+                      }}
+                    >
+                      {quantite}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: "500" }}>
+                      {produit ? produit.nom : `Produit #${prodId} (indisponible)`}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ color: "#28a745", fontWeight: "bold" }}>
+                        {produit ? `${produit.prix}€` : "N/A"}
+                      </span>
+                      <span style={{ 
+                        color: "#6c757d", 
+                        fontSize: "14px", 
+                        backgroundColor: "#e9ecef",
+                        padding: "2px 6px",
+                        borderRadius: "3px"
+                      }}>
+                        Qté: {quantite}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </td>
+        <td>
+          <div style={{ position: "relative" }}>
+            <select 
+              value={cmd.statutPaiement || "En attente"} 
+              onChange={(e) => handleChangeStatutCommande(cmd.id, e.target.value)}
+              style={{
+                padding: "6px",
+                borderRadius: "4px",
+                border: "1px solid #ccc",
+                backgroundColor: getStatutColor(cmd.statutPaiement),
+                color: cmd.statutPaiement === "En attente" ? "#000" : "#fff",
+                width: "100%",
+                cursor: statusUpdating === cmd.id ? "wait" : "pointer",
+                opacity: statusUpdating === cmd.id ? 0.7 : 1
+              }}
+              disabled={statusUpdating === cmd.id}
+            >
+              <option value="En attente" style={{ backgroundColor: "#fff", color: "#000" }}>En attente</option>
+              <option value="Payé" style={{ backgroundColor: "#fff", color: "#000" }}>Payé</option>
+              <option value="Commande en cours" style={{ backgroundColor: "#fff", color: "#000" }}>Commande en cours</option>
+              <option value="Expédition de la commande" style={{ backgroundColor: "#fff", color: "#000" }}>Expédition de la commande</option>
+              <option value="Livré" style={{ backgroundColor: "#fff", color: "#000" }}>Livré</option>
+            </select>
+            {statusUpdating === cmd.id && (
+              <div style={{
+                position: "absolute",
+                top: "50%",
+                right: "8px",
+                transform: "translateY(-50%)",
+                width: "16px",
+                height: "16px",
+                borderRadius: "50%",
+                border: "2px solid transparent",
+                borderTopColor: "#fff",
+                animation: "spin 1s linear infinite"
+              }}>
+                <style>{`
+                  @keyframes spin {
+                    0% { transform: translateY(-50%) rotate(0deg); }
+                    100% { transform: translateY(-50%) rotate(360deg); }
+                  }
+                `}</style>
+              </div>
+            )}
+          </div>
+        </td>
+        <td>
+          <button
+            style={{
+              background: "#b7202e",
+              color: "#fff",
+              border: "none",
+              padding: "8px 16px",
+              borderRadius: "5px",
+              cursor: "pointer"
+            }}
+            onClick={() => handleDeleteCommande(cmd.id)}
+          >
+            Supprimer
+          </button>
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+        </div>
+      )}
+
+      {/* Bouton pour afficher/masquer la liste des produits */}
+      <div style={{ textAlign: "center", margin: "25px 0" }}>
+        <button
+          style={{
+            background: showProduits ? "#b7202e" : "#24973f",
+            color: "#fff",
+            border: "none",
+            padding: "10px 20px",
+            borderRadius: "5px",
+            cursor: "pointer"
+          }}
+          onClick={handleToggleProduits}
+        >
+          {showProduits ? "Fermer la liste des produits" : "Voir tous les produits"}
+        </button>
+      </div>
+
+      {/* Section des produits */}
+      {showProduits && produits.length >= 0 && (
+        <div>
+          <div style={{ textAlign: "center", marginBottom: "20px" }}>
+            <button
+              style={{
+                background: showAddProductForm ? "#b7202e" : "#24973f",
+                color: "#fff",
+                border: "none",
+                padding: "10px 20px",
+                borderRadius: "5px",
+                cursor: "pointer"
+              }}
+              onClick={handleShowAddProductForm}
+            >
+              {showAddProductForm ? "Annuler" : "Ajouter un produit"}
+            </button>
+          </div>
+
+          {/* Formulaire d'ajout de produit */}
+          {showAddProductForm && (
+            <div style={{ 
+              border: "1px solid #ddd", 
+              padding: "20px", 
+              borderRadius: "5px",
+              marginBottom: "20px",
+              backgroundColor: "#f9f9f9",
+              maxHeight: "600px",
+              overflowY: "auto"
+            }}>
+              <h3 style={{ color: "#28a745", textAlign: "center", marginTop: 0 }}>Nouveau produit</h3>
+              <form onSubmit={handleAddProduct}>
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ display: "block", marginBottom: "5px" }}>Nom du produit:</label>
+                  <input
+                    type="text"
+                    name="nom"
+                    value={newProduct.nom}
+                    onChange={handleProductInputChange}
+                    style={{ width: "100%", padding: "8px" }}
+                    required
+                  />
+                </div>
+                
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ display: "block", marginBottom: "5px" }}>Prix:</label>
+                  <input
+                    type="number"
+                    name="prix"
+                    value={newProduct.prix}
+                    onChange={handleProductInputChange}
+                    style={{ width: "100%", padding: "8px" }}
+                    step="0.01"
+                    min="0"
+                    required
+                  />
+                </div>
+                
+                {/* Champ pour la quantité */}
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ display: "block", marginBottom: "5px" }}>Quantité en stock:</label>
+                  <input
+                    type="number"
+                    name="quantite"
+                    value={newProduct.quantite}
+                    onChange={handleProductInputChange}
+                    style={{ width: "100%", padding: "8px" }}
+                    min="0"
+                    step="1"
+                  />
+                  <small style={{ color: "#6c757d", fontSize: "12px" }}>
+                    Nombre d'articles disponibles en stock
+                  </small>
+                </div>
+                
+                {/* Description du produit */}
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ display: "block", marginBottom: "5px" }}>Description du produit:</label>
+                  <textarea
+                    name="description"
+                    value={newProduct.description}
+                    onChange={handleProductInputChange}
+                    style={{ 
+                      width: "100%", 
+                      padding: "8px",
+                      minHeight: "100px",
+                      resize: "vertical"
+                    }}
+                    placeholder="Entrez une description détaillée du produit..."
+                  />
+                </div>
+                
+                {/* Champ pour l'URL de l'image */}
+                <div style={{ marginBottom: "15px" }}>
+                  <label style={{ display: "block", marginBottom: "5px" }}>URL de l'image:</label>
+                  <div style={{ display: "flex" }}>
+                    <input
+                      type="text" 
+                      name="image"
+                      value={newProduct.image}
+                      onChange={handleProductInputChange}
+                      style={{ 
+                        width: "100%", 
+                        padding: "8px",
+                        borderTopRightRadius: newProduct.image ? "0" : "4px",
+                        borderBottomRightRadius: newProduct.image ? "0" : "4px"
+                      }}
+                      placeholder="https://example.com/image.jpg"
+                    />
+                    {newProduct.image && (
+                      <button
+                        type="button"
+                        onClick={() => setNewProduct({...newProduct, image: ""})}
+                        style={{
+                          background: "#dc3545",
+                          color: "#fff",
+                          border: "none",
+                          borderTopRightRadius: "4px",
+                          borderBottomRightRadius: "4px",
+                          padding: "0 10px",
+                          cursor: "pointer"
+                        }}
+                        title="Effacer l'URL"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Prévisualisation d'image */}
+                  {newProduct.image && (
+                    <div style={{ 
+                      marginTop: "10px", 
+                      textAlign: "center", 
+                      border: "1px dashed #ddd",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      backgroundColor: "#f9f9f9"
+                    }}>
+                      <p style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>
+                        Prévisualisation de l'image:
+                      </p>
+                      <div style={{ position: "relative", display: "inline-block" }}>
+                        <img 
+                          src={newProduct.image} 
+                          alt="Prévisualisation" 
+                          style={{ 
+                            maxWidth: "100%", 
+                            maxHeight: "200px",
+                            borderRadius: "5px",
+                            border: "1px solid #ddd"
+                          }} 
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = "https://via.placeholder.com/200x150?text=URL+invalide";
+                            e.target.style.opacity = "0.7";
+                          }}
+                        />
+                        <div style={{ 
+                          position: "absolute", 
+                          bottom: "5px", 
+                          right: "5px", 
+                          backgroundColor: "rgba(0,0,0,0.6)",
+                          color: "white",
+                          padding: "3px 8px",
+                          fontSize: "12px",
+                          borderRadius: "3px"
+                        }}>
+                          {newProduct.image.length > 30 
+                            ? newProduct.image.substring(0, 27) + "..." 
+                            : newProduct.image}
+                        </div>
+                      </div>
+                      <p style={{ 
+                        fontSize: "12px", 
+                        color: "#888", 
+                        marginTop: "8px",
+                        fontStyle: "italic"
+                      }}>
+                        Si l'image ne s'affiche pas correctement, vérifiez l'URL ou utilisez une autre source
+                      </p>
+                      <div style={{ display: "flex", justifyContent: "center", gap: "10px", marginTop: "8px" }}>
+                        <button 
+                          type="button"
+                          onClick={() => setNewProduct({
+                            ...newProduct, 
+                            image: "https://picsum.photos/300/200?random=" + Math.floor(Math.random() * 1000)
+                          })}
+                          style={{
+                            padding: "5px 10px",
+                            background: "#17a2b8",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            cursor: "pointer"
+                          }}
+                        >
+                          Image aléatoire
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setNewProduct({...newProduct, image: ""})}
+                          style={{
+                            padding: "5px 10px",
+                            background: "#6c757d",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            cursor: "pointer"
+                          }}
+                        >
+                          Effacer
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <button
+                  type="submit"
+                  style={{
+                    background: isSubmitting ? "#6c757d" : "#28a745",
+                    color: "#fff",
+                    border: "none",
+                    padding: "10px 20px",
+                    borderRadius: "5px",
+                    cursor: isSubmitting ? "not-allowed" : "pointer",
+                    width: "100%",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center"
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span style={{ marginRight: "10px" }}>Enregistrement en cours...</span>
+                      <div style={{
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "50%",
+                        border: "3px solid 24973f",
+                        borderTopColor: "#fff",
+                        animation: "spin 1s linear infinite"
+                      }}></div>
+                    </>
+                  ) : (
+                    "Enregistrer le produit"
+                  )}
+                </button>
+              </form>
+            </div>
+          )}
+          
+          <h2 style={{ color: "#007bff", textAlign: "center" }}>Liste des produits</h2>
+          
+{/* Barre de recherche de produits */}
+<div style={{ 
+  width: "90%", 
+  maxWidth: "500px", 
+  margin: "15px auto",
+  display: "flex", 
+  justifyContent: "center" 
+}}>
+  <div style={{ 
+    display: "flex", 
+    gap: "5px", 
+    alignItems: "center", 
+    width: "100%",
+    
+    padding: "5px 10px",
+    borderRadius: "5px"
+  }}>
+    <input
+      type="text"
+      placeholder="Rechercher par nom de produit..."
+      value={productSearchTerm}
+      onChange={(e) => setProductSearchTerm(e.target.value)}
+      style={{
+        padding: "8px",
+        borderRadius: "4px",
+        border: "1px solid #ccc",
+        width: "100%",
+        fontSize: "14px"
+      }}
+    />
+    {productSearchTerm && (
+      <button
+        onClick={() => setProductSearchTerm("")}
+        style={{
+          background: "transparent",
+          color: "#666",
+          border: "none",
+          padding: "5px",
+          cursor: "pointer",
+          fontSize: "16px"
+        }}
+      >
+        ×
+      </button>
+    )}
+  </div>
+</div>
+
+<p style={{ textAlign: "center", margin: "0 0 15px 0", color: "#666" }}>
+  {filteredProducts.length} produit{filteredProducts.length !== 1 ? 's' : ''} au total
+  {productSearchTerm && (
+    <span style={{ display: "block", fontSize: "13px", marginTop: "5px" }}>
+      sur {produits.length} produit{produits.length !== 1 ? 's' : ''} disponibles
+    </span>
+  )}
+</p>
+
+<div style={{ 
+  display: "grid", 
+  gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", 
+  gap: "25px",
+  marginTop: "20px",
+  maxHeight: "500px",
+  overflowY: "auto",
+  paddingRight: "10px"
+}}>
+  
+  {filteredProducts.map(prod => (
+    <div key={prod.id} style={{ 
+      border: "1px solid #ddd", 
+      borderRadius: "5px",
+      padding: "10px",
+      backgroundColor: "#f9f9f9",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center"
+    }}>
+      <div style={{
+        display: "flex", 
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        height: "100%"
+      }}>
+        <div 
+          onClick={() => handleToggleProductDetails(prod)}
+          style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            alignItems: "center",
+            width: "100%",
+            cursor: "pointer",
+            transition: "transform 0.2s",
+            padding: "5px",
+            borderRadius: "4px"
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.transform = "translateY(-3px)";
+            e.currentTarget.style.backgroundColor = "#f0f0f0";
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.backgroundColor = "transparent";
+          }}
+        >
+          <img 
+            src={prod.image || "https://via.placeholder.com/100?text=Pas+d'image"} 
+            alt={`${prod.nom} - ${prod.prix}€`}
+            title={`${prod.nom} - ${prod.prix}€ - Cliquez pour voir le détail`}
+            style={{ 
+              width: "80px", 
+              height: "80px", 
+              objectFit: "cover",
+              borderRadius: "5px",
+              marginBottom: "8px",
+              transition: "transform 0.2s, box-shadow 0.2s"
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = "scale(1.1)";
+              e.currentTarget.style.boxShadow = "0 0 5px rgba(0,0,0,0.3)";
+              e.stopPropagation(); // Pour éviter de déclencher deux animations en même temps
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = "scale(1)";
+              e.currentTarget.style.boxShadow = "none";
+              e.stopPropagation(); // Pour éviter de déclencher deux animations en même temps
+            }}
+          />
+          <div style={{ textAlign: "center", width: "100%" }}>
+            <h3 style={{ margin: "3px 0", fontSize: "14px" }}>Référence: {prod.id}</h3>
+            <p style={{ 
+              margin: "3px 0", 
+              fontSize: "14px", 
+              fontWeight: "500", 
+              height: "40px",
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: "2",
+              WebkitBoxOrient: "vertical"
+            }}>
+              {prod.nom}
+            </p>
+            <p style={{ 
+              margin: "3px 0",
+              fontSize: "12px", 
+              color: parseInt(prod.quantite) <= 5 ? "#dc3545" : "#198754",
+            }}>
+              {parseInt(prod.quantite) <= 0 ? "Rupture de stock" : 
+              `En stock: ${prod.quantite}`}
+            </p>
+            <p style={{ 
+              margin: "5px 0 10px 0",
+              fontSize: "16px", 
+              color: "#28a745", 
+              fontWeight: "bold",
+              position: "relative",
+              bottom: "0"
+            }}>
+              {prod.prix}€
+            </p>
+          </div>
+        </div>
+        
+        <div style={{ display: "flex", width: "100%", marginTop: "auto", gap: "5px" }}>
+          <button
+            style={{
+              flex: 1,
+              background: "#0d6efd",
+              color: "#fff",
+              border: "none",
+              padding: "6px 12px",
+              borderRadius: "5px",
+              cursor: "pointer",
+              fontSize: "14px"
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleProductDetails(prod);
+            }}
+          >
+            Détails
+          </button>
+          <button
+            style={{
+              flex: 1,
+              background: "#b7202e",
+              color: "#fff",
+              border: "none",
+              padding: "6px 12px",
+              borderRadius: "5px",
+              cursor: "pointer",
+              fontSize: "14px"
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteProduit(prod.id);
+            }}
+          >
+            Supprimer
+          </button>
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
+</div>
+)}
+
+      {/* Modal pour afficher les détails d'un produit */}
+      {selectedProduct && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          backgroundColor: "rgba(0,0,0,0.5)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000
+        }}
+        onClick={() => setSelectedProduct(null)}
+        >
+          <div 
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: "8px",
+              padding: "20px",
+              width: "80%",
+              maxWidth: "600px",
+              maxHeight: "90vh",
+              overflow: "auto",
+              position: "relative"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              style={{
+                position: "absolute",
+                top: "10px",
+                right: "10px",
+                background: "#dc3545",
+                color: "#fff",
+                border: "none",
+                borderRadius: "50%",
+                width: "30px",
+                height: "30px",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                cursor: "pointer",
+                fontSize: "18px"
+              }}
+              onClick={() => setSelectedProduct(null)}
+            >
+              &times;
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "20px" }}>
+              <h2 style={{ color: "#007bff", marginTop: 0 }}>{selectedProduct.nom}</h2>
+              <p style={{ fontSize: "20px", color: "#28a745", fontWeight: "bold" }}>
+                {selectedProduct.prix}€
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "20px" }}>
+              <img 
+                src={selectedProduct.image || "https://via.placeholder.com/300?text=Pas+d'image"} 
+                alt={selectedProduct.nom}
+                style={{ 
+                  maxWidth: "100%", 
+                  maxHeight: "300px", 
+                  objectFit: "contain",
+                  borderRadius: "5px",
+                  boxShadow: "0 2px 5px rgba(0,0,0,0.1)"
+                }} 
+              />
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h3 style={{ color: "#495057", borderBottom: "1px solid #dee2e6", paddingBottom: "10px" }}>Description</h3>
+              <p style={{ color: "#6c757d", lineHeight: "1.6" }}>
+                {selectedProduct.description || "Aucune description disponible pour ce produit."}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <h3 style={{ color: "#495057", borderBottom: "1px solid #dee2e6", paddingBottom: "10px" }}>Détails</h3>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6", fontWeight: "bold" }}>Reférence</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6" }}>{selectedProduct.id}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6", fontWeight: "bold" }}>Nom</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6" }}>{selectedProduct.nom}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6", fontWeight: "bold" }}>Prix</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6" }}>{selectedProduct.prix}€</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6", fontWeight: "bold" }}>Quantité en stock</td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid #dee2e6" }}>
+                      {selectedProduct.quantite || "0"}
+                      <span style={{ 
+                        color: parseInt(selectedProduct.quantite) <= 5 ? "#dc3545" : "#198754", 
+                        marginLeft: "10px", 
+                        fontSize: "13px" 
+                      }}>
+                        {parseInt(selectedProduct.quantite) <= 0 ? "(Rupture de stock)" : 
+                         parseInt(selectedProduct.quantite) <= 5 ? "(Stock faible)" : ""}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <button
+                style={{
+                  flex: 1,
+                  marginRight: "10px",
+                  background: "#28a745",
+                  color: "#fff",
+                  border: "none",
+                  padding: "10px 20px",
+                  borderRadius: "5px",
+                  cursor: "pointer"
+                }}
+                onClick={() => goToProductPage(selectedProduct.id)}
+              >
+                Voir page produit
+              </button>
+              <button
+                style={{
+                  flex: 1,
+                  background: "#b7202e",
+                  color: "#fff",
+                  border: "none",
+                  padding: "10px 20px",
+                  borderRadius: "5px",
+                  cursor: "pointer"
+                }}
+                onClick={() => {
+                  if (window.confirm(`Supprimer le produit "${selectedProduct.nom}" ?`)) {
+                    handleDeleteProduit(selectedProduct.id);
+                    setSelectedProduct(null);
+                  }
+                }}
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Fonction utilitaire pour obtenir la couleur de fond en fonction du statut
+function getStatutColor(statut) {
+  switch(statut) {
+    case "Payé":
+      return "#198754"; // vert
+    case "Commande en cours":
+      return "#0d6efd"; // bleu
+    case "Expédition de la commande":
+      return "#cf5f02"; // orange
+    case "Livré": 
+      return "#1ba77e"; // vert turquoise
+    case "En attente":
+    default:
+      return "#dea700"; // jaune
+  }
+}
+
+export default AdminDashboard;
