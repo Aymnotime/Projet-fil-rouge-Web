@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import "./produit.css";
 import ProductDetailModal from "../../components/ProductDetailModal";
 

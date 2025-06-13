@@ -160,7 +160,7 @@ export default function CheckoutForm({ amount, commande_id = null, clientSecret,
             Informations de carte
           </label>
           <div className="card-element-container p-3 border rounded">
-            <CardElement options={cardElementOptions} />
+            <CardElement options={{cardElementOptions, hidePostalCode:true}} />
           </div>
           <small className="form-text text-muted mt-2">
             <i className="bi bi-info-circle me-1"></i>

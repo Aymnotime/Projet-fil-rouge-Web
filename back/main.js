@@ -20,7 +20,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors({
-  origin: 'http://localhost:3001', // adapte selon le port de ton front
+  origin: true, // adapte selon le port de ton front
   credentials: true               // essentiel pour les cookies de session
 }));
 
@@ -946,6 +946,6 @@ app.post("/api/update-payment-status", async (req, res) => {
 
 require('./archiveUsers');
 
-app.listen(3000, () => {
+app.listen(3001, () => {
   console.log("Server is running on port 3000");
 });
