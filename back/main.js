@@ -941,6 +941,133 @@ app.post("/api/update-payment-status", async (req, res) => {
   }
 });
 
+// Route pour récupérer toutes les catégories
+app.get('/api/categories', (req, res) => {
+    pool.query('SELECT * FROM categorie ORDER BY nom', (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({ 'success': true, 'data': rows });
+        }
+    });
+});
+
+// Route pour récupérer les produits avec les informations de catégorie (jointure)
+app.get('/api/produits-with-category', (req, res) => {
+    pool.query(`
+        SELECT s.*, c.nom as categorie_nom 
+        FROM stock s 
+        LEFT JOIN categorie c ON s.categorie_id = c.id 
+        ORDER BY s.nom
+    `, (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({ 'success': true, 'data': rows });
+        }
+    });
+});
+
+// ROUTES ADMIN pour la gestion des catégories (optionnel)
+
+// Récupérer toutes les catégories (admin)
+app.get('/api/admin/categories', isAdmin, (req, res) => {
+    pool.query('SELECT * FROM categorie ORDER BY nom', (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({ 'success': true, 'data': rows });
+        }
+    });
+});
+
+// Ajouter une nouvelle catégorie (admin)
+app.post('/api/admin/categories', isAdmin, (req, res) => {
+    const { nom, description } = req.body;
+    
+    if (!nom) {
+        return res.send({
+            success: false,
+            message: 'Le nom de la catégorie est requis'
+        });
+    }
+    
+    pool.query('INSERT INTO categorie (nom, description) VALUES (?, ?)', [nom, description || null], (err, result) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({
+                success: true,
+                message: 'Catégorie ajoutée avec succès',
+                data: { id: result.insertId, nom, description }
+            });
+        }
+    });
+});
+
+// Modifier une catégorie (admin)
+app.put('/api/admin/categories/:id', isAdmin, (req, res) => {
+    const { id } = req.params;
+    const { nom, description } = req.body;
+    
+    if (!nom) {
+        return res.send({
+            success: false,
+            message: 'Le nom de la catégorie est requis'
+        });
+    }
+    
+    pool.query('UPDATE categorie SET nom = ?, description = ? WHERE id = ?', [nom, description || null, id], (err, result) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else if (result.affectedRows === 0) {
+            res.send({
+                success: false,
+                message: 'Catégorie non trouvée'
+            });
+        } else {
+            res.send({
+                success: true,
+                message: 'Catégorie modifiée avec succès'
+            });
+        }
+    });
+});
+
+// Supprimer une catégorie (admin)
+app.delete('/api/admin/categories/:id', isAdmin, (req, res) => {
+    const { id } = req.params;
+    
+    // Vérifier s'il y a des produits associés à cette catégorie
+    pool.query('SELECT COUNT(*) as count FROM stock WHERE categorie_id = ?', [id], (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else if (rows[0].count > 0) {
+            res.send({
+                success: false,
+                message: 'Impossible de supprimer cette catégorie car elle contient des produits'
+            });
+        } else {
+            // Supprimer la catégorie
+            pool.query('DELETE FROM categorie WHERE id = ?', [id], (err, result) => {
+                if (err) {
+                    res.send({ 'success': false, 'message': err });
+                } else if (result.affectedRows === 0) {
+                    res.send({
+                        success: false,
+                        message: 'Catégorie non trouvée'
+                    });
+                } else {
+                    res.send({
+                        success: true,
+                        message: 'Catégorie supprimée avec succès'
+                    });
+                }
+            });
+        }
+    });
+});
+
 
 
 
