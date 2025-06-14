@@ -19,6 +19,20 @@ const api = {
     return axios.get('/api/user');
   },
 
+  // Fonction pour demander un reset de mot de passe
+  forgotPassword(email) {
+    return axios.post('/api/forgot-password', { email });
+  },
+
+  // Fonction pour réinitialiser le mot de passe avec le token
+  resetPassword(token, password, confirmPassword) {
+    return axios.post('/api/reset-password', { 
+      token, 
+      password, 
+      confirmPassword 
+    });
+  },
+
   // Vérifier si l'utilisateur actuel est admin
   checkAdmin() {
     return axios.post('/api/check-admin');
