@@ -36,8 +36,6 @@ const api = {
     return axios.get('/api/commandes');
   },
 
-  
-
   newCommande(produits) {
     return axios.post('/api/commande', { produits });
   },
@@ -48,6 +46,11 @@ const api = {
 
   getProduits() {
     return axios.get('/api/produits');
+  },
+
+  // NOUVELLE FONCTION : Récupérer les catégories
+  getCategories() {
+    return axios.get('/api/categories');
   },
 
   getProduitById(id) {
@@ -167,8 +170,22 @@ const api = {
   updateUserProfile: (userData) => axios.put(
     '/api/user/profile',
     userData
-  )
+  ),
 
+  // NOUVELLES FONCTIONS ADMIN pour les catégories (optionnel)
+  getAdminCategories: () => axios.get('/api/admin/categories'),
+  
+  addCategorie: (categorieData) => axios.post(
+    '/api/admin/categories',
+    categorieData
+  ),
+
+  updateCategorie: (id, categorieData) => axios.put(
+    `/api/admin/categories/${id}`,
+    categorieData
+  ),
+
+  deleteCategorie: (id) => axios.delete(`/api/admin/categories/${id}`)
 };
 
 export default api;

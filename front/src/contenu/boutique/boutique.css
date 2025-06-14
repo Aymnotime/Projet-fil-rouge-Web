@@ -26,6 +26,24 @@
   padding: 20px;
 }
 
+.firstblock {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.cart {
+  cursor: pointer;
+  font-size: 24px;
+  color: black;
+  margin-left: auto;
+}
+
+.cart:hover {
+  color: #0056b3;
+}
+
 .product-modal {
   background-color: white;
   border-radius: 8px;
