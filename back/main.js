@@ -250,11 +250,17 @@ app.get('/api/articles', (req, res) => {
 });
 
 app.get("/api/produits", (req, res) => {
-  pool.query("SELECT * FROM stock", (err, rows) => {
+  // On fait un JOIN pour récupérer le nom de la catégorie
+  pool.query(`
+    SELECT s.*, c.nom AS categorie
+    FROM stock s
+    LEFT JOIN categorie c ON s.categorie_id = c.id
+    LIMIT 20
+  `, (err, rows) => {
     if (err) {
       res.send({ error: err });
     } else {
-      res.send(rows.slice(0, 20));
+      res.send(rows);
     }
   });
 });
