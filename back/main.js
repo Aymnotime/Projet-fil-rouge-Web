@@ -146,7 +146,7 @@ app.post("/api/commande", (req, res) => {
 
     const produitsParsed = JSON.parse(produits);
 
-    pool.query('SELECT * FROM stock', (err, rows) => {
+    pool.query('SELECT * FROM produits', (err, rows) => {
         if (err) {
             res.send({ success: false, message: err });
         } else {
@@ -189,7 +189,7 @@ app.get("/api/commandes", (req, res) => {
         }
 
         const commands = rows;
-        pool.query('SELECT * FROM stock', (err, rows) => {
+        pool.query('SELECT * FROM produits', (err, rows) => {
             if (err) {
                 res.send({ success: false, message: err });
             }
@@ -219,42 +219,14 @@ app.get("/api/commandes", (req, res) => {
     });
 });
 
-app.get("/api/equipes", (req, res) => {
-  pool.query("SELECT * FROM equipe", (err, rows) => {
-    if (err) {
-      res.send({ success: false, message: err });
-    } else {
-      res.send({ success: true, equipes: rows });
-    }
-  });
-});
 
-app.get('/api/articles', (req, res) => {
-    pool.query('SELECT * FROM article', (err, rows) => {
-        if (err) {
-            res.send({ 'success': false, 'message': err });
-        } else {
-            res.send({ 'success': true, 'articles': rows });
-        }
-    });
-});
-
-app.get('/api/articles', (req, res) => {
-    pool.query('SELECT * FROM article', (err, rows) => {
-        if (err) {
-            res.send({ 'success': false, 'message': err });
-        } else {
-            res.send({ 'success': true, 'articles': rows });
-        }
-    });
-});
 
 app.get("/api/produits", (req, res) => {
   // On fait un JOIN pour récupérer le nom de la catégorie
   pool.query(`
-    SELECT s.*, c.nom AS categorie
-    FROM stock s
-    LEFT JOIN categorie c ON s.categorie_id = c.id
+    SELECT p.*, c.nom AS categorie
+    FROM produits p
+    LEFT JOIN categorie c ON p.categorie_id = c.id
     LIMIT 20
   `, (err, rows) => {
     if (err) {
@@ -574,4 +546,110 @@ require('./archiveUsers');
 
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
+});
+
+// Route pour récupérer toutes les catégories
+app.get('/api/categories', (req, res) => {
+  pool.query('SELECT * FROM categorie', (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, categories: rows });
+    }
+  });
+});
+
+// --- Gestion du panier persistant ---
+// Ajouter un produit au panier
+app.post('/api/panier', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  const { id_produit, quantite } = req.body;
+  if (!id_produit || !quantite) {
+    res.send({ success: false, message: 'Données manquantes' });
+    return;
+  }
+  // Vérifier si le produit est déjà dans le panier
+  pool.query('SELECT * FROM panier WHERE id_utilisateur = ? AND id_produit = ?', [req.session.user.id, id_produit], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else if (rows.length > 0) {
+      // Mettre à jour la quantité
+      pool.query('UPDATE panier SET quantite = quantite + ? WHERE id_utilisateur = ? AND id_produit = ?', [quantite, req.session.user.id, id_produit], (err) => {
+        if (err) {
+          res.send({ success: false, message: err });
+        } else {
+          res.send({ success: true, message: 'Quantité mise à jour' });
+        }
+      });
+    } else {
+      // Ajouter une nouvelle ligne
+      pool.query('INSERT INTO panier (id_utilisateur, id_produit, quantite) VALUES (?, ?, ?)', [req.session.user.id, id_produit, quantite], (err) => {
+        if (err) {
+          res.send({ success: false, message: err });
+        } else {
+          res.send({ success: true, message: 'Produit ajouté au panier' });
+        }
+      });
+    }
+  });
+});
+
+// Lire le panier avec infos produit dynamiques
+app.get('/api/panier', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  pool.query(`
+    SELECT p.id, p.id_produit, p.quantite, pr.nom, pr.image, pr.prix, pr.brand_name
+    FROM panier p
+    JOIN produits pr ON p.id_produit = pr.id
+    WHERE p.id_utilisateur = ?
+  `, [req.session.user.id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, panier: rows });
+    }
+  });
+});
+
+// Supprimer un produit du panier
+app.delete('/api/panier/:id_produit', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  const id_produit = req.params.id_produit;
+  pool.query('DELETE FROM panier WHERE id_utilisateur = ? AND id_produit = ?', [req.session.user.id, id_produit], (err) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, message: 'Produit supprimé du panier' });
+    }
+  });
+});
+
+// Modifier la quantité d'un produit dans le panier
+app.put('/api/panier/:id_produit', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  const id_produit = req.params.id_produit;
+  const { quantite } = req.body;
+  if (!quantite || quantite < 1) {
+    res.send({ success: false, message: 'Quantité invalide' });
+    return;
+  }
+  pool.query('UPDATE panier SET quantite = ? WHERE id_utilisateur = ? AND id_produit = ?', [quantite, req.session.user.id, id_produit], (err, result) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, message: 'Quantité modifiée' });
+    }
+  });
 });
