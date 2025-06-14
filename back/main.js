@@ -3,6 +3,8 @@ const mysql = require("mysql2");
 const session = require("express-session");
 const bcrypt = require("bcrypt");
 const uuid = require("uuid");
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const dotenv = require("dotenv");
 // Garder les deux versions combinées
 const isAdmin = require('./isAdmin');
@@ -60,6 +62,24 @@ const pool = mysql.createPool({
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
   next();
+});
+
+
+// Configuration du transporteur email avec Gmail
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER, // Ton adresse Gmail
+    pass: process.env.EMAIL_PASS  // Le mot de passe d'application
+  }
+});
+
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Erreur configuration email:', error);
+  } else {
+    console.log('✅ Serveur email prêt à envoyer');
+  }
 });
 
 app.get("/api/admin/commandes", isAdmin, (req, res) => {
@@ -471,6 +491,192 @@ app.post("/api/password", (req, res) => {
         }
     });
 });
+
+// Route pour demander un reset de mot de passe
+app.post("/api/forgot-password", (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.send({ success: false, message: "Veuillez fournir une adresse email" });
+    return;
+  }
+
+  if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+    res.send({ success: false, message: "Email invalide" });
+    return;
+  }
+
+  // Vérifier si l'utilisateur existe
+  pool.query('SELECT * FROM utilisateur WHERE email = ?', [email], (err, rows) => {
+    if (err) {
+      console.error("Erreur recherche utilisateur:", err);
+      res.status(500).send({ success: false, message: "Erreur serveur" });
+      return;
+    }
+
+    if (rows.length === 0) {
+      // Pour des raisons de sécurité, on ne révèle pas si l'email existe ou non
+      res.send({ success: true, message: "Si cette adresse email existe dans notre système, vous recevrez un lien de réinitialisation." });
+      return;
+    }
+
+    const user = rows[0];
+
+    // Générer un token de réinitialisation (valide 1 heure)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenExpiry = new Date(Date.now() + 3600000); // 1 heure
+
+    // Sauvegarder le token en base
+    pool.query(
+      'UPDATE utilisateur SET reset_token = ?, reset_token_expiry = ? WHERE id = ?',
+      [resetToken, tokenExpiry, user.id],
+      (err, result) => {
+        if (err) {
+          console.error("Erreur sauvegarde token:", err);
+          res.status(500).send({ success: false, message: "Erreur serveur" });
+          return;
+        }
+
+        // Configuration de l'email
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
+        
+        const mailOptions = {
+          from: process.env.EMAIL_FROM || 'noreply@votresite.com',
+          to: email,
+          subject: 'Réinitialisation de votre mot de passe',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>Réinitialisation de mot de passe</h2>
+              <p>Bonjour ${user.prenom} ${user.nom},</p>
+              <p>Vous avez demandé une réinitialisation de votre mot de passe.</p>
+              <p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
+              <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Réinitialiser mon mot de passe
+              </a>
+              <p style="margin-top: 20px;">
+                <strong>Ce lien expire dans 1 heure.</strong>
+              </p>
+              <p>Si vous n'avez pas demandé cette réinitialisation, ignorez simplement cet email.</p>
+              <hr style="margin: 20px 0;">
+              <p style="font-size: 12px; color: #666;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :<br>
+                ${resetUrl}
+              </p>
+            </div>
+          `
+        };
+
+        // Envoyer l'email (nécessite nodemailer configuré)
+        transporter.sendMail(mailOptions, (error, info) => {
+          if (error) {
+            console.error('Erreur envoi email:', error);
+            res.status(500).send({ success: false, message: "Erreur lors de l'envoi de l'email" });
+          } else {
+            console.log('Email envoyé:', info.response);
+            res.send({ 
+              success: true, 
+              message: "Un email de réinitialisation a été envoyé à votre adresse." 
+            });
+          }
+        });
+      }
+    );
+  });
+});
+
+// Route pour réinitialiser le mot de passe avec le token
+app.post("/api/reset-password", (req, res) => {
+  const { token, password, confirmPassword } = req.body;
+
+  if (!token || !password || !confirmPassword) {
+    res.send({ success: false, message: "Veuillez remplir tous les champs" });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.send({ success: false, message: "Le mot de passe doit contenir au moins 8 caractères" });
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    res.send({ success: false, message: "Les mots de passe ne correspondent pas" });
+    return;
+  }
+
+  // Vérifier le token et sa validité
+  pool.query(
+    'SELECT * FROM utilisateur WHERE reset_token = ? AND reset_token_expiry > NOW()',
+    [token],
+    (err, rows) => {
+      if (err) {
+        console.error("Erreur vérification token:", err);
+        res.status(500).send({ success: false, message: "Erreur serveur" });
+        return;
+      }
+
+      if (rows.length === 0) {
+        res.send({ 
+          success: false, 
+          message: "Token invalide ou expiré. Veuillez faire une nouvelle demande de réinitialisation." 
+        });
+        return;
+      }
+
+      const user = rows[0];
+
+      // Hasher le nouveau mot de passe
+      bcrypt.hash(password, 10, (err, hash) => {
+        if (err) {
+          console.error("Erreur hashage mot de passe:", err);
+          res.status(500).send({ success: false, message: "Erreur serveur" });
+          return;
+        }
+
+        // Mettre à jour le mot de passe et supprimer le token
+        pool.query(
+          'UPDATE utilisateur SET mdp = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?',
+          [hash, user.id],
+          (err, result) => {
+            if (err) {
+              console.error("Erreur mise à jour mot de passe:", err);
+              res.status(500).send({ success: false, message: "Erreur serveur" });
+              return;
+            }
+
+            console.log(`Mot de passe réinitialisé pour l'utilisateur ${user.email}`);
+            res.send({ 
+              success: true, 
+              message: "Votre mot de passe a été réinitialisé avec succès." 
+            });
+          }
+        );
+      });
+    }
+  );
+});
+
+// Route optionnelle pour vérifier la validité d'un token
+app.get("/api/verify-reset-token/:token", (req, res) => {
+  const { token } = req.params;
+
+  pool.query(
+    'SELECT id FROM utilisateur WHERE reset_token = ? AND reset_token_expiry > NOW()',
+    [token],
+    (err, rows) => {
+      if (err) {
+        res.status(500).send({ success: false, message: "Erreur serveur" });
+        return;
+      }
+
+      if (rows.length === 0) {
+        res.send({ success: false, message: "Token invalide ou expiré" });
+      } else {
+        res.send({ success: true, message: "Token valide" });
+      }
+    }
+  );
+});
+
 
 app.post("/api/commande", (req, res) => {
     if (!req.session.user) {

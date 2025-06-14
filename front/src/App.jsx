@@ -7,6 +7,7 @@ import api from './api';
 import Contenu from './contenu';
 import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './components/AdminDashboard';
+import ResetPasswordPage from './layout/ResetPasswordPage';
 import { AuthProvider } from './context/AuthContext';
 
 function App() {
@@ -96,6 +97,8 @@ function App() {
               />
               <Route path="/admin/commandes" 
                   element={<AdminDashboard />} />
+
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
             </Routes>
           </div>
           
