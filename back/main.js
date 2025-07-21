@@ -941,9 +941,6 @@ app.post("/api/update-payment-status", async (req, res) => {
   }
 });
 
-
-
-
 require('./archiveUsers');
 
 app.listen(3001, () => {

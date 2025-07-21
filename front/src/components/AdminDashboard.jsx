@@ -27,7 +27,7 @@ const AdminDashboard = () => {
   const [error, setError] = useState("");
   const [statusUpdating, setStatusUpdating] = useState(null);
   const [showAddProductForm, setShowAddProductForm] = useState(false);
-  const [newProduct, setNewProduct] = useState({ nom: "", prix: "", description: "", quantite: "0",  image: ""});
+  const [newProduct, setNewProduct] = useState({ nom: "", prix: "", description: "", quantite: "0", categories: "",   image: ""});
   const [produitsMap, setProduitsMap] = useState({});
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,6 +42,31 @@ const AdminDashboard = () => {
     return product.nom && product.nom.toLowerCase().includes(searchLower);
   });
 
+
+    // Charger les catégories
+  const loadCategories = () => {
+    api.getCategories()
+      .then(res => {
+        if (res.data.success) {
+          setCategories(res.data.categories || []);
+        }
+      })
+      .catch(err => {
+        console.error("Erreur chargement catégories:", err);
+      });
+  };
+
+  // Filtrer les produits par nom ET par catégorie
+  const filteredProducts = produits.filter(product => {
+    const matchesSearch = !productSearchTerm.trim() || 
+      (product.nom && product.nom.toLowerCase().includes(productSearchTerm.toLowerCase()));
+    
+    const matchesCategory = !selectedCategory || 
+      (product.categorie === selectedCategory);
+    
+    return matchesSearch && matchesCategory;
+  });
+
   // Fonction pour réinitialiser le formulaire
   const resetForm = () => {
     setNewProduct({ 
@@ -49,7 +74,8 @@ const AdminDashboard = () => {
       prix: "", 
       description: "", 
       image: "",
-      quantite: "0"
+      quantite: "0",
+      catégories: ""
     });
     setError("");
   };
