@@ -38,7 +38,21 @@ app.get("/api", (req, res) => {
 
 app.get("/api/user", (req, res) => {
   if (req.session.user) {
-    res.send({ success: true, user: req.session.user });
+    // Récupérer les infos utilisateur avec adresse via JOIN
+    pool.query(`
+      SELECT u.*, a.telephone, a.adresse, a.complement_adresse, a.code_postal, 
+             a.ville, a.pays, a.par_defaut as adresse_par_defaut
+      FROM utilisateur u
+      LEFT JOIN adresse_utilisateur a ON u.id = a.id_utilisateur AND a.par_defaut = 1
+      WHERE u.id = ?
+    `, [req.session.user.id], (err, rows) => {
+      if (err) {
+        res.send({ success: false, message: err });
+      } else {
+        const userWithAddress = rows[0] || req.session.user;
+        res.send({ success: true, user: userWithAddress });
+      }
+    });
   } else {
     res.send({ success: false, message: "Non connecté" });
   }
@@ -50,10 +64,10 @@ app.post("/api/user", (req, res) => {
         return;
     }
 
-    const { nom, prenom, email } = req.body;
+    const { nom, prenom, email, telephone, adresse, complement_adresse, code_postal, ville, pays, adresse_par_defaut } = req.body;
 
     if (!nom || !prenom || !email) {
-        res.send({ success: false, message: "Veuillez remplir tous les champs" });
+        res.send({ success: false, message: "Veuillez remplir tous les champs obligatoires" });
         return;
     }
 
@@ -64,66 +78,66 @@ app.post("/api/user", (req, res) => {
 
     const id = req.session.user.id;
 
-    pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, rows) => {
+    // 1. Mettre à jour les infos de base dans utilisateur
+    pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', 
+    [nom, prenom, email, id], (err, rows) => {
         if (err) {
             res.send({ success: false, message: err });
-        } else {
-            req.session.user.nom = nom;
-            req.session.user.prenom = prenom;
-            req.session.user.email = email;
-            res.send({ success: true, message: "success" });
+            return;
         }
-    });
-});
 
-app.post("/api/password", (req, res) => {
-    if (!req.session.user) {
-        res.send({ success: false, message: "Non connecté" });
-        return;
-    }
+        // 2. Gérer l'adresse si fournie
+        if (adresse && telephone) {
+            // Vérifier si une adresse existe déjà
+            pool.query('SELECT * FROM adresse_utilisateur WHERE id_utilisateur = ?', [id], (err, existing) => {
+                if (err) {
+                    res.send({ success: false, message: err });
+                    return;
+                }
 
-    const { oldPassword, password, confirm } = req.body;
-
-    if (!oldPassword || !password || !confirm) {
-        res.send({ success: false, message: "Veuillez remplir tous les champs" });
-        return;
-    }
-
-    if (password.length < 8) {
-        res.send({ success: false, message: "Mot de passe trop court" });
-        return;
-    }
-
-    if (password !== confirm) {
-        res.send({ success: false, message: "Les mots de passe ne correspondent pas" });
-        return;
-    }
-
-    const id = req.session.user.id;
-
-    pool.query('SELECT * FROM utilisateur WHERE id = ?', [id], (err, rows) => {
-        if (err) {
-            res.send({ success: false, message: err });
-        } else {
-            bcrypt.compare(oldPassword, rows[0].mdp, (err, result) => {
-                if (result) {
-                    bcrypt.hash(password, 10, (err, hash) => {
+                if (existing.length > 0) {
+                    // Mettre à jour l'adresse existante
+                    pool.query(`UPDATE adresse_utilisateur SET 
+                        telephone = ?, adresse = ?, complement_adresse = ?, 
+                        code_postal = ?, ville = ?, pays = ?, par_defaut = ?
+                        WHERE id_utilisateur = ?`, 
+                    [telephone, adresse, complement_adresse, code_postal, ville, pays, adresse_par_defaut || 1, id], 
+                    (err) => {
                         if (err) {
                             res.send({ success: false, message: err });
                         } else {
-                            pool.query('UPDATE utilisateur SET mdp = ? WHERE id = ?', [hash, id], (err, rows) => {
-                                if (err) {
-                                    res.send({ success: false, message: err });
-                                } else {
-                                    res.send({ success: true, message: "success" });
-                                }
-                            });
+                            // Mettre à jour la session
+                            req.session.user.nom = nom;
+                            req.session.user.prenom = prenom;
+                            req.session.user.email = email;
+                            res.send({ success: true, message: "Informations mises à jour avec succès" });
                         }
                     });
                 } else {
-                    res.send({ success: false, message: "Mot de passe incorrect" });
+                    // Créer une nouvelle adresse
+                    pool.query(`INSERT INTO adresse_utilisateur 
+                        (id_utilisateur, telephone, adresse, complement_adresse, code_postal, ville, pays, par_defaut) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+                    [id, telephone, adresse, complement_adresse, code_postal, ville, pays, adresse_par_defaut || 1], 
+                    (err) => {
+                        if (err) {
+                            res.send({ success: false, message: err });
+                        } else {
+                            // Mettre à jour la session
+                            req.session.user.nom = nom;
+                            req.session.user.prenom = prenom;
+                            req.session.user.email = email;
+                            res.send({ success: true, message: "Informations mises à jour avec succès" });
+                        }
+                    });
                 }
             });
+        } else {
+            // Pas d'adresse, juste mettre à jour la session
+            req.session.user.nom = nom;
+            req.session.user.prenom = prenom;
+            req.session.user.email = email;
+            res.send({ success: true, message: "Informations mises à jour avec succès" });
         }
     });
 });
@@ -222,9 +236,9 @@ app.get("/api/commandes", (req, res) => {
 
 
 app.get("/api/produits", (req, res) => {
-  // On fait un JOIN pour récupérer le nom de la catégorie
+  // On fait un JOIN pour récupérer le nom de la catégorie et le prix promo
   pool.query(`
-    SELECT p.*, c.nom AS categorie
+    SELECT p.*, c.nom AS categorie, p.prix_promo
     FROM produits p
     LEFT JOIN categorie c ON p.categorie_id = c.id
     LIMIT 20
@@ -253,10 +267,16 @@ app.post("/api/produits", (req, res) => {
   const quantite = req.body.quantite;
   const prix = req.body.prix;
   const description = req.body.description;
+  const prix_promo = req.body.prix_promo;
   const id = uuid.v4();
+  // Si prix_promo est défini et inférieur au prix, on met isFlashSale à 1
+  let isFlashSale = 0;
+  if (prix_promo !== undefined && prix_promo !== null && !isNaN(prix_promo) && Number(prix_promo) > 0 && Number(prix_promo) < Number(prix)) {
+    isFlashSale = 1;
+  }
   pool.query(
-    "INSERT INTO produits (nom, quantite, prix, description, id) VALUES (?, ?, ?, ?, ?)",
-    [nom, quantite, prix, description, id],
+    "INSERT INTO produits (nom, quantite, prix, description, prix_promo, isFlashSale, id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [nom, quantite, prix, description, prix_promo, isFlashSale, id],
     (err, rows) => {
       if (err) {
         res.send({ success: false, message: err });
@@ -414,8 +434,14 @@ app.post("/api/register", (req, res) => {
   }
 
   // check password length
-  if (password.length < 8) {
-    res.send({ success: false, message: "Mot de passe trop court" });
+  if (password.length < 12) {
+    res.send({ success: false, message: "Le mot de passe doit contenir au moins 12 caractères" });
+    return;
+  }
+
+  // check password contains special characters
+  if (!password.match(/(?=.*?[#?!@$%^&*-])/)) {
+    res.send({ success: false, message: "Le mot de passe doit contenir au moins un caractère spécial" });
     return;
   }
 
@@ -540,6 +566,75 @@ app.delete("/api/user/delete", (req, res) => {
   });
 });
 
+app.post("/api/user/change-password", (req, res) => {
+    if (!req.session.user) {
+        res.send({ success: false, message: "Non connecté" });
+        return;
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        res.send({ success: false, message: "Veuillez remplir tous les champs" });
+        return;
+    }
+
+    if (newPassword.length < 12) {
+        res.send({ success: false, message: "Le nouveau mot de passe doit contenir au moins 12 caractères" });
+        return;
+    }
+
+    if (!newPassword.match(/(?=.*?[#?!@$%^&*-])/)) {
+        res.send({ success: false, message: "Le nouveau mot de passe doit contenir au moins un caractère spécial" });
+        return;
+    }
+
+    const id = req.session.user.id;
+
+    // Vérifier l'ancien mot de passe
+    pool.query('SELECT * FROM utilisateur WHERE id = ?', [id], (err, rows) => {
+        if (err) {
+            res.send({ success: false, message: err });
+            return;
+        }
+
+        if (rows.length === 0) {
+            res.send({ success: false, message: "Utilisateur introuvable" });
+            return;
+        }
+
+        const user = rows[0];
+        bcrypt.compare(currentPassword, user.mdp, (err, result) => {
+            if (err) {
+                res.send({ success: false, message: "Erreur lors de la vérification du mot de passe" });
+                return;
+            }
+
+            if (!result) {
+                res.send({ success: false, message: "Mot de passe actuel incorrect" });
+                return;
+            }
+
+            // Hasher le nouveau mot de passe
+            bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+                if (err) {
+                    res.send({ success: false, message: "Erreur lors du hashage du mot de passe" });
+                    return;
+                }
+
+                // Mettre à jour le mot de passe
+                pool.query('UPDATE utilisateur SET mdp = ? WHERE id = ?', [hashedPassword, id], (err, rows) => {
+                    if (err) {
+                        res.send({ success: false, message: err });
+                    } else {
+                        res.send({ success: true, message: "Mot de passe changé avec succès" });
+                    }
+                });
+            });
+        });
+    });
+});
+
 require('dotenv').config({ path: './back/.env' });  
 
 require('./archiveUsers');
@@ -548,9 +643,70 @@ app.listen(3000, () => {
   console.log("Server is running on port 3000");
 });
 
+// --- Gestion des avis produits ---
+// Récupérer les avis d'un produit
+app.get('/api/produits/:id/avis', (req, res) => {
+  const id_produit = req.params.id;
+  pool.query(`
+    SELECT a.*, u.prenom, u.nom 
+    FROM avis a
+    JOIN utilisateur u ON a.id_utilisateur = u.id
+    WHERE a.id_produit = ?
+    ORDER BY a.date_creation DESC
+  `, [id_produit], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, avis: rows });
+    }
+  });
+});
+
+// Ajouter un avis
+app.post('/api/produits/:id/avis', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  
+  const id_produit = req.params.id;
+  const { note, titre, commentaire } = req.body;
+  const id_utilisateur = req.session.user.id;
+
+  if (!note || note < 1 || note > 5) {
+    res.send({ success: false, message: 'Note invalide (1-5)' });
+    return;
+  }
+
+  // Vérifier si l'utilisateur a déjà donné un avis
+  pool.query('SELECT * FROM avis WHERE id_produit = ? AND id_utilisateur = ?', [id_produit, id_utilisateur], (err, existing) => {
+    if (err) {
+      res.send({ success: false, message: err });
+      return;
+    }
+
+    if (existing.length > 0) {
+      res.send({ success: false, message: 'Vous avez déjà donné un avis pour ce produit' });
+      return;
+    }
+
+    pool.query(
+      'INSERT INTO avis (id_produit, id_utilisateur, note, titre, commentaire) VALUES (?, ?, ?, ?, ?)',
+      [id_produit, id_utilisateur, note, titre || null, commentaire || null],
+      (err) => {
+        if (err) {
+          res.send({ success: false, message: err });
+        } else {
+          res.send({ success: true, message: 'Avis ajouté avec succès' });
+        }
+      }
+    );
+  });
+});
+
 // Route pour récupérer toutes les catégories
 app.get('/api/categories', (req, res) => {
-  pool.query('SELECT * FROM categorie', (err, rows) => {
+  pool.query('SELECT * FROM categories', (err, rows) => {
     if (err) {
       res.send({ success: false, message: err });
     } else {
@@ -604,7 +760,7 @@ app.get('/api/panier', (req, res) => {
     return;
   }
   pool.query(`
-    SELECT p.id, p.id_produit, p.quantite, pr.nom, pr.image, pr.prix, pr.brand_name
+    SELECT p.id, p.id_produit, p.quantite, pr.nom, pr.image, pr.prix, pr.brand_name, pr.prix_promo
     FROM panier p
     JOIN produits pr ON p.id_produit = pr.id
     WHERE p.id_utilisateur = ?
@@ -612,6 +768,7 @@ app.get('/api/panier', (req, res) => {
     if (err) {
       res.send({ success: false, message: err });
     } else {
+      // Correction : toujours renvoyer un objet avec success et panier
       res.send({ success: true, panier: rows });
     }
   });
@@ -651,5 +808,221 @@ app.put('/api/panier/:id_produit', (req, res) => {
     } else {
       res.send({ success: true, message: 'Quantité modifiée' });
     }
+  });
+});
+
+// --- Gestion des adresses de livraison ---
+// Récupérer toutes les adresses d'un utilisateur
+app.get('/api/adresses', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  
+  pool.query('SELECT * FROM adresse_utilisateur WHERE id_utilisateur = ? ORDER BY par_defaut DESC, id DESC', 
+  [req.session.user.id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, adresses: rows });
+    }
+  });
+});
+
+// Ajouter une nouvelle adresse
+app.post('/api/adresses', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+
+  const { telephone, adresse, complement_adresse, code_postal, ville, pays, par_defaut } = req.body;
+
+  if (!telephone || !adresse || !code_postal || !ville) {
+    res.send({ success: false, message: 'Veuillez remplir tous les champs obligatoires' });
+    return;
+  }
+
+  // Si cette adresse est définie par défaut, retirer le statut par défaut des autres
+  if (par_defaut) {
+    pool.query('UPDATE adresse_utilisateur SET par_defaut = 0 WHERE id_utilisateur = ?', 
+    [req.session.user.id], (err) => {
+      if (err) {
+        res.send({ success: false, message: err });
+        return;
+      }
+      
+      // Insérer la nouvelle adresse
+      pool.query(`INSERT INTO adresse_utilisateur 
+        (id_utilisateur, telephone, adresse, complement_adresse, code_postal, ville, pays, par_defaut) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+      [req.session.user.id, telephone, adresse, complement_adresse, code_postal, ville, pays || 'France', par_defaut ? 1 : 0], 
+      (err, result) => {
+        if (err) {
+          res.send({ success: false, message: err });
+        } else {
+          res.send({ success: true, message: 'Adresse ajoutée avec succès', id: result.insertId });
+        }
+      });
+    });
+  } else {
+    // Insérer directement sans modifier les autres adresses
+    pool.query(`INSERT INTO adresse_utilisateur 
+      (id_utilisateur, telephone, adresse, complement_adresse, code_postal, ville, pays, par_defaut) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+    [req.session.user.id, telephone, adresse, complement_adresse, code_postal, ville, pays || 'France', 0], 
+    (err, result) => {
+      if (err) {
+        res.send({ success: false, message: err });
+      } else {
+        res.send({ success: true, message: 'Adresse ajoutée avec succès', id: result.insertId });
+      }
+    });
+  }
+});
+
+// Modifier une adresse existante
+app.put('/api/adresses/:id', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+
+  const addressId = req.params.id;
+  const { telephone, adresse, complement_adresse, code_postal, ville, pays, par_defaut } = req.body;
+
+  if (!telephone || !adresse || !code_postal || !ville) {
+    res.send({ success: false, message: 'Veuillez remplir tous les champs obligatoires' });
+    return;
+  }
+
+  // Vérifier que l'adresse appartient bien à l'utilisateur connecté
+  pool.query('SELECT * FROM adresse_utilisateur WHERE id = ? AND id_utilisateur = ?', 
+  [addressId, req.session.user.id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+      return;
+    }
+
+    if (rows.length === 0) {
+      res.send({ success: false, message: 'Adresse non trouvée' });
+      return;
+    }
+
+    // Si cette adresse devient par défaut, retirer le statut des autres
+    if (par_defaut) {
+      pool.query('UPDATE adresse_utilisateur SET par_defaut = 0 WHERE id_utilisateur = ? AND id != ?', 
+      [req.session.user.id, addressId], (err) => {
+        if (err) {
+          res.send({ success: false, message: err });
+          return;
+        }
+
+        // Mettre à jour l'adresse
+        pool.query(`UPDATE adresse_utilisateur SET 
+          telephone = ?, adresse = ?, complement_adresse = ?, 
+          code_postal = ?, ville = ?, pays = ?, par_defaut = ?
+          WHERE id = ? AND id_utilisateur = ?`, 
+        [telephone, adresse, complement_adresse, code_postal, ville, pays || 'France', 1, addressId, req.session.user.id], 
+        (err) => {
+          if (err) {
+            res.send({ success: false, message: err });
+          } else {
+            res.send({ success: true, message: 'Adresse mise à jour avec succès' });
+          }
+        });
+      });
+    } else {
+      // Mettre à jour directement sans modifier les autres adresses
+      pool.query(`UPDATE adresse_utilisateur SET 
+        telephone = ?, adresse = ?, complement_adresse = ?, 
+        code_postal = ?, ville = ?, pays = ?, par_defaut = ?
+        WHERE id = ? AND id_utilisateur = ?`, 
+      [telephone, adresse, complement_adresse, code_postal, ville, pays || 'France', 0, addressId, req.session.user.id], 
+      (err) => {
+        if (err) {
+          res.send({ success: false, message: err });
+        } else {
+          res.send({ success: true, message: 'Adresse mise à jour avec succès' });
+        }
+      });
+    }
+  });
+});
+
+// Supprimer une adresse
+app.delete('/api/adresses/:id', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+
+  const addressId = req.params.id;
+
+  // Vérifier que l'adresse appartient bien à l'utilisateur connecté
+  pool.query('SELECT * FROM adresse_utilisateur WHERE id = ? AND id_utilisateur = ?', 
+  [addressId, req.session.user.id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+      return;
+    }
+
+    if (rows.length === 0) {
+      res.send({ success: false, message: 'Adresse non trouvée' });
+      return;
+    }
+
+    // Supprimer l'adresse
+    pool.query('DELETE FROM adresse_utilisateur WHERE id = ? AND id_utilisateur = ?', 
+    [addressId, req.session.user.id], (err) => {
+      if (err) {
+        res.send({ success: false, message: err });
+      } else {
+        res.send({ success: true, message: 'Adresse supprimée avec succès' });
+      }
+    });
+  });
+});
+
+// Définir une adresse comme adresse par défaut
+app.put('/api/adresses/:id/defaut', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+
+  const addressId = req.params.id;
+
+  // Vérifier que l'adresse appartient bien à l'utilisateur connecté
+  pool.query('SELECT * FROM adresse_utilisateur WHERE id = ? AND id_utilisateur = ?', 
+  [addressId, req.session.user.id], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+      return;
+    }
+
+    if (rows.length === 0) {
+      res.send({ success: false, message: 'Adresse non trouvée' });
+      return;
+    }
+
+    // Retirer le statut par défaut de toutes les adresses de l'utilisateur
+    pool.query('UPDATE adresse_utilisateur SET par_defaut = 0 WHERE id_utilisateur = ?', 
+    [req.session.user.id], (err) => {
+      if (err) {
+        res.send({ success: false, message: err });
+        return;
+      }
+
+      // Définir cette adresse comme par défaut
+      pool.query('UPDATE adresse_utilisateur SET par_defaut = 1 WHERE id = ? AND id_utilisateur = ?', 
+      [addressId, req.session.user.id], (err) => {
+        if (err) {
+          res.send({ success: false, message: err });
+        } else {
+          res.send({ success: true, message: 'Adresse définie comme adresse par défaut' });
+        }
+      });
+    });
   });
 });
