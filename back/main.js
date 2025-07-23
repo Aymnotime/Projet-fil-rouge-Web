@@ -931,6 +931,35 @@ app.post("/api/register", (req, res) => {
                     email: user.email,
                     fonction: user.fonction,
                   };
+
+                  // ENVOI DE L'EMAIL DE BIENVENUE
+                  const mailOptions = {
+                    from: process.env.EMAIL_FROM || 'noreply@votresite.com',
+                    to: email,
+                    subject: 'Bienvenue sur notre site !',
+                    html: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2>Bienvenue ${prenom} ${nom} !</h2>
+                        <p>Merci de vous être inscrit sur notre site.</p>
+                        <p>Nous sommes ravis de vous compter parmi nos membres.</p>
+                        <p>Vous pouvez dès à présent vous connecter et profiter de nos services.</p>
+                        <hr style="margin: 20px 0;">
+                        <p style="font-size: 12px; color: #666;">
+                          Si vous n'êtes pas à l'origine de cette inscription, ignorez simplement cet email.
+                        </p>
+                      </div>
+                    `
+                  };
+
+                  transporter.sendMail(mailOptions, (error, info) => {
+                    if (error) {
+                      console.error('Erreur envoi email bienvenue:', error);
+                      // On ne bloque pas l'inscription même si l'email échoue
+                    } else {
+                      console.log('Email de bienvenue envoyé:', info.response);
+                    }
+                  });
+
                   res.send({
                     success: true,
                     message: "User successfully created",
@@ -1127,6 +1156,83 @@ app.post("/api/update-payment-status", async (req, res) => {
       try {
         await pool.promise().execute(updateCommandeQuery, [commande_id]);
         console.log("✅ Statut commande mis à jour:", commande_id);
+
+        // Récupérer les infos de la commande et de l'utilisateur pour la facture
+        const [commandeRows] = await pool.promise().query(
+          "SELECT c.*, u.email, u.nom, u.prenom FROM commande c JOIN utilisateur u ON c.id_utilisateur = u.id WHERE c.id = ?",
+          [commande_id]
+        );
+        if (commandeRows.length > 0) {
+          const commande = commandeRows[0];
+          const produits = JSON.parse(commande.produits);
+
+          // Récupérer les détails des produits
+          const [stockRows] = await pool.promise().query(
+            "SELECT id, nom, prix FROM stock WHERE id IN (?)",
+            [produits.map(p => p.id)]
+          );
+          // Associer quantité et prix
+          let total = 0;
+          const lignes = produits.map(p => {
+            const prod = stockRows.find(s => s.id === p.id);
+            const prix = prod ? prod.prix : 0;
+            const nom = prod ? prod.nom : "Produit inconnu";
+            const quantite = 1;
+            const sousTotal = prix * quantite;
+            total += sousTotal;
+            return `<tr>
+              <td>${nom}</td>
+              <td>${quantite}</td>
+              <td>${prix.toFixed(2)} €</td>
+              <td>${sousTotal.toFixed(2)} €</td>
+            </tr>`;
+          }).join("");
+
+          // Email HTML
+          const factureHtml = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>Votre facture</h2>
+              <p>Bonjour ${commande.prenom} ${commande.nom},</p>
+              <p>Merci pour votre commande. Voici le récapitulatif :</p>
+              <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Article</th>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Quantité</th>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Prix unitaire</th>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${lignes}
+                </tbody>
+              </table>
+              <h3 style="margin-top:20px;">Total payé : ${total.toFixed(2)} €</h3>
+              <hr style="margin: 20px 0;">
+              <p style="font-size: 12px; color: #666;">
+                Merci pour votre confiance.<br>
+                Ceci est une facture générée automatiquement.
+              </p>
+            </div>
+          `;
+
+          // Envoi de l'email
+          const mailOptions = {
+            from: process.env.EMAIL_FROM || 'noreply@votresite.com',
+            to: commande.email,
+            subject: 'Votre facture - Merci pour votre commande',
+            html: factureHtml
+          };
+
+          transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+              console.error('Erreur envoi email facture:', error);
+            } else {
+              console.log('Email de facture envoyé:', info.response);
+            }
+          });
+        }
+
       } catch (commandeError) {
         console.error("⚠️ Erreur mise à jour commande (non bloquant):", commandeError);
         // On ne bloque pas la réponse même si la mise à jour de la commande échoue
