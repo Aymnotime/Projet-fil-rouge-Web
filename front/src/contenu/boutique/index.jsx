@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import "./boutique.css";
 import Produit from "./Produit";
 import api from "../../api";
@@ -10,6 +11,7 @@ function Boutique(props) {
   const searchRef = useRef(null);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]); // Initialiser comme tableau vide
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Récupérer les produits
@@ -83,6 +85,7 @@ function Boutique(props) {
       .then((response) => {
         if (response.data) {
           props.setPanier([]);
+          navigate("/compte?onglet=commandes");
         }
       });
   };

@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import api from "../../../api";
 import StripeContainer from "../../Stripe/StripeContainer";
 import "./commande.css";
+import { useNavigate } from "react-router-dom";
 
 const CommandePage = () => {
   const [commandes, setCommandes] = useState([]);
   const [userEmail, setUserEmail] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     api.getUser().then((res) => {
@@ -63,12 +65,16 @@ const CommandePage = () => {
                   <h4>Total: {totalAmount.toFixed(2)} €</h4>
                 </div>
                 
-                {/* Passer l'ID de commande et le montant total */}
-                <StripeContainer 
-                  amount={totalAmount}
-                  commande_id={commande.id}
-                  email={userEmail}
-                />
+                {!commande.paye && (
+                  <button
+                    className="btn btn-success"
+                    onClick={() =>
+                      navigate(`/paiement?commande_id=${commande.id}&amount=${totalAmount}`)
+                    }
+                  >
+                    Valider la commande
+                  </button>
+                )}
               </div>
             </div>
           );

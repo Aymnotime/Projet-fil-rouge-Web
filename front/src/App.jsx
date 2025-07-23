@@ -9,6 +9,7 @@ import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './components/AdminDashboard';
 import ResetPasswordPage from './layout/ResetPasswordPage';
 import { AuthProvider } from './context/AuthContext';
+import PaiementPage from "./contenu/Stripe/PaiementPage";
 
 function App() {
   const [user, setUser] = useState();
@@ -99,6 +100,7 @@ function App() {
                   element={<AdminDashboard />} />
 
               <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+              <Route path="/paiement" element={<PaiementPage />} />
             </Routes>
           </div>
           

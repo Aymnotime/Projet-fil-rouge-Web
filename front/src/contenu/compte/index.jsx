@@ -6,6 +6,7 @@ import Form from "react-bootstrap/Form";
 import Button from "react-bootstrap/Button";
 import CommandePage from "./commande/commande";
 import Confidentialité from "../confidentialite/index";
+import { useLocation } from "react-router-dom";
 
 function Compte(props) {
   const [email, setEmail] = useState("");
@@ -14,6 +15,16 @@ function Compte(props) {
   const [password, setPassword] = useState("");
   const [modifie, setModifie] = useState(false);
   const [mdpmodifie, setMdpodifie] = useState(false);
+  const location = useLocation();
+  const [activeKey, setActiveKey] = useState("0");
+
+  useEffect(() => {
+    // Vérifie le paramètre d'URL pour ouvrir l'onglet Commandes
+    const params = new URLSearchParams(location.search);
+    if (params.get("onglet") === "commandes") {
+      setActiveKey("1");
+    }
+  }, [location.search]);
 
   // Mise à jour de l'état local lorsque les props changent
   useEffect(() => {
@@ -34,7 +45,7 @@ function Compte(props) {
   };
   return (
     <div className="compte">
-      <Accordion>
+      <Accordion activeKey={activeKey} onSelect={setActiveKey}>
         <Accordion.Item eventKey="0">
           <Accordion.Header>
             <i className="bi bi-person-circle"></i>

@@ -10,6 +10,7 @@ function FicheProduit(props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [quantite, setQuantite] = useState(1);
+  const [similaires, setSimilaires] = useState([]);
 
   useEffect(() => {
     // Récupérer le produit spécifique par son ID
@@ -18,6 +19,16 @@ function FicheProduit(props) {
         const produitTrouve = response.data.find(p => p.id === parseInt(id));
         if (produitTrouve) {
           setProduit(produitTrouve);
+
+          // Charger les produits similaires (même catégorie, exclure le produit courant)
+          api.getProduits().then((res) => {
+            if (res.data) {
+              const similaires = res.data.filter(
+                p => p.categorie_id === produitTrouve.categorie_id && p.id !== produitTrouve.id
+              ).slice(0, 6); // Limite à 6 similaires
+              setSimilaires(similaires);
+            }
+          });
         } else {
           setError("Produit non trouvé");
         }
@@ -197,6 +208,22 @@ function FicheProduit(props) {
           </div>
         </div>
       </div>
+      {similaires.length > 0 && (
+        <div className="similaires-section">
+          <h3>Produits similaires</h3>
+          <div className="similaires-list">
+            {similaires.map((sim, idx) => (
+              <div key={sim.id} className="similaire-card" onClick={() => navigate(`/produit/${sim.id}`)}>
+                <img src={sim.image} alt={sim.nom} className="similaire-image" />
+                <div className="similaire-info">
+                  <div className="similaire-nom">{sim.nom}</div>
+                  <div className="similaire-prix">{sim.prix} €</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

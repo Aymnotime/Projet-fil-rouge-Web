@@ -306,6 +306,41 @@
   color: #e74c3c;
 }
 
+.similaires-section {
+  margin-top: 40px;
+}
+.similaires-list {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.similaire-card {
+  cursor: pointer;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px;
+  width: 150px;
+  text-align: center;
+  transition: box-shadow 0.2s;
+  background: #fafafa;
+}
+.similaire-card:hover {
+  box-shadow: 0 2px 8px #ccc;
+}
+.similaire-image {
+  width: 100%;
+  height: 100px;
+  object-fit: contain;
+}
+.similaire-nom {
+  font-weight: bold;
+  margin-top: 8px;
+}
+.similaire-prix {
+  color: #007bff;
+  margin-top: 4px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .fiche-produit {
