@@ -1,11 +1,18 @@
+
 const express = require("express");
 const mysql = require("mysql2");
 const session = require("express-session");
 const bcrypt = require("bcrypt");
 const uuid = require("uuid");
 const dotenv = require("dotenv");
+const cardValidator = require("card-validator");
 
+// Charger les variables d'environnement EN PREMIER
+require('dotenv').config({ path: './back/.env' });
 dotenv.config();
+
+// Initialiser Stripe APRÈS avoir chargé les variables d'environnement
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(express.json());
@@ -13,7 +20,13 @@ app.use(
   session({
     secret: "dsof82445qs*2E",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax", // ou "none" si Flutter web + HTTPS
+      secure: false, // mettre true si HTTPS
+      maxAge: 1000 * 60 * 60 * 24 * 7 // 7 jours
+    }
   })
 );
 
@@ -142,96 +155,60 @@ app.post("/api/user", (req, res) => {
     });
 });
 
-app.post("/api/commande", (req, res) => {
-    if (!req.session.user) {
-        res.send({ success: false, message: "Non connecté" });
-        return;
+
+app.post("/api/commandes", (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: "Non connecté" });
+    return;
+  }
+  const userId = req.session.user.id;
+  const id = uuid.v4();
+  const date = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  // Récupérer le panier de l'utilisateur
+  pool.query(`
+    SELECT p.id_produit, p.quantite, pr.nom, pr.prix, pr.prix_promo, pr.image
+    FROM panier p
+    JOIN produits pr ON p.id_produit = pr.id
+    WHERE p.id_utilisateur = ?
+  `, [userId], (err, rows) => {
+    if (err) {
+      res.send({ success: false, message: err });
+      return;
     }
-
-    const { produits } = req.body;
-
-    if (!produits) {
-        res.send({ success: false, message: "Veuillez remplir tous les champs" });
-        return;
+    if (!rows || rows.length === 0) {
+      res.send({ success: false, message: "Votre panier est vide" });
+      return;
     }
-
-    const id = uuid.v4();
-    const date = new Date().toISOString().slice(0, 19).replace('T', ' ');
-
-    const produitsParsed = JSON.parse(produits);
-
-    pool.query('SELECT * FROM produits', (err, rows) => {
+    // Préparer la liste des produits pour la commande
+    const produitsCommande = rows.map(item => ({
+      id: item.id_produit,
+      quantity: item.quantite,
+      nom: item.nom,
+      prix: item.prix,
+      prix_promo: item.prix_promo,
+      image: item.image
+    }));
+    // Calcul du total (en tenant compte du prix promo si présent)
+    let montant_total = 0;
+    produitsCommande.forEach(item => {
+      const prix = (item.prix_promo && item.prix_promo > 0 && item.prix_promo < item.prix) ? item.prix_promo : item.prix;
+      montant_total += prix * item.quantity;
+    });
+    // Insérer la commande
+    pool.query(
+      'INSERT INTO commande (id, id_utilisateur, produits, date, montant_total) VALUES (?, ?, ?, ?, ?)',
+      [id, userId, JSON.stringify(produitsCommande), date, montant_total],
+      (err, result) => {
         if (err) {
-            res.send({ success: false, message: err });
+          res.send({ success: false, message: err });
         } else {
-            const stock = rows;
-            let allProductsExist = true;
-            let total = 0;
-            produitsParsed.forEach((produit) => {
-                const product = stock.find((p) => p.id === produit.id);
-                if (!product) {
-                    allProductsExist = false;
-                } else {
-                    total += product.prix * produit.quantite;
-                }
-            });
-
-            if (!allProductsExist) {
-                res.send({ success: false, message: "Un ou plusieurs produits n'existent pas" });
-                return;
-            }
-
-            pool.query('INSERT INTO commande (id, date, produits, id_utilisateur) VALUES (?, ?, ?, ?)', [id, date, produits, req.session.user.id], (err, rows) => {
-                if (err) {
-                    res.send({ success: false, message: err });
-                }
-
-                res.send({ success: true, message: "success" });
-            });
+          res.send({ success: true, id, montant_total, produits: produitsCommande });
         }
-    });
+      }
+    );
+  });
 });
 
-app.get("/api/commandes", (req, res) => {
-    if (!req.session.user) {
-        res.send({ success: false, message: "Non connecté" });
-    }
-
-    pool.query('SELECT * FROM commande WHERE id_utilisateur = ?', [req.session.user.id], (err, rows) => {
-        if (err) {
-            res.send({ success: false, message: err });
-        }
-
-        const commands = rows;
-        pool.query('SELECT * FROM produits', (err, rows) => {
-            if (err) {
-                res.send({ success: false, message: err });
-            }
-
-            const stock = rows;
-            const commandsWithProducts = commands.map((command) => {
-                const products = JSON.parse(command.produits);
-                const productsWithDetails = products.map((product) => {
-                    const productDetails = stock.find((p) => p.id === product.id);
-                    return {
-                        ...product,
-                        nom: productDetails.nom,
-                        prix: productDetails.prix,
-                        image: productDetails.image,
-                        description: productDetails.description,
-                    };
-                });
-
-                return {
-                    ...command,
-                    produits: productsWithDetails,
-                };
-            });
-
-            res.send({ success: true, commands: commandsWithProducts });
-        });
-    });
-});
 
 
 
@@ -301,12 +278,9 @@ app.get("/api/annonces", (req, res) => {
 });
 
 app.post("/api/login", (req, res) => {
-  const email = req.body.email;
-  const password = req.body.password;
-
+  const { email, password } = req.body;
   if (!email || !password) {
-    res.send({ success: false, message: "Veuillez remplir tous les champs" });
-    return;
+    return res.send({ success: false, message: "Veuillez remplir tous les champs" });
   }
 
   // 1. Vérifier si l'utilisateur est archivé
@@ -315,17 +289,13 @@ app.post("/api/login", (req, res) => {
     [email],
     (err, archivedRows) => {
       if (err) {
-        res.send({ error: err });
-        return;
+        return res.send({ error: err });
       }
-
       if (archivedRows.length > 0) {
-        // Utilisateur archivé => bloqué
-        res.send({
+        return res.send({
           success: false,
           message: "Ce compte a été archivé et ne peut plus se connecter.",
         });
-        return;
       }
 
       // 2. Vérifier dans la table utilisateur normale
@@ -334,46 +304,45 @@ app.post("/api/login", (req, res) => {
         [email],
         (err, rows) => {
           if (err) {
-            res.send({ error: err });
-          } else {
-            if (rows.length > 0) {
-              bcrypt.compare(password, rows[0].mdp, (err, result) => {
-                if (result) {
-                  const user = rows[0];
-
-                  // 🔁 Mettre à jour la date de dernière connexion
-                  pool.query(
-                    "UPDATE utilisateur SET derniere_connexion = NOW() WHERE id = ?",
-                    [user.id],
-                    (updateErr) => {
-                      if (updateErr) {
-                        console.error("Erreur mise à jour dernière connexion :", updateErr);
-                      }
+            return res.send({ error: err });
+          }
+          if (rows.length > 0) {
+            bcrypt.compare(password, rows[0].mdp, (err, result) => {
+              if (err) {
+                return res.send({ success: false, message: "Erreur serveur" });
+              }
+              if (result) {
+                const user = rows[0];
+                // 🔁 Mettre à jour la date de dernière connexion
+                pool.query(
+                  "UPDATE utilisateur SET derniere_connexion = NOW() WHERE id = ?",
+                  [user.id],
+                  (updateErr) => {
+                    if (updateErr) {
+                      console.error("Erreur mise à jour dernière connexion :", updateErr);
                     }
-                  );
-
-                  req.session.user = {
-                    id: user.id,
-                    nom: user.nom,
-                    prenom: user.prenom,
-                    email: user.email,
-                    fonction: user.fonction,
-                  };
-
-                  res.send({ success: true, message: "success" });
-                } else {
-                  res.send({
-                    success: false,
-                    message: "Mot de passe ou email incorrect",
-                  });
-                }
-              });
-            } else {
-              res.send({
-                success: false,
-                message: "Mot de passe ou email incorrect",
-              });
-            }
+                  }
+                );
+                req.session.user = {
+                  id: user.id,
+                  nom: user.nom,
+                  prenom: user.prenom,
+                  email: user.email,
+                  fonction: user.fonction,
+                };
+                return res.send({ success: true, message: "success" });
+              } else {
+                return res.send({
+                  success: false,
+                  message: "Mot de passe ou email incorrect",
+                });
+              }
+            });
+          } else {
+            return res.send({
+              success: false,
+              message: "Mot de passe ou email incorrect",
+            });
           }
         }
       );
@@ -637,7 +606,157 @@ app.post("/api/user/change-password", (req, res) => {
 
 require('dotenv').config({ path: './back/.env' });  
 
-require('./archiveUsers');
+
+// Route pour lancer l'archivage des utilisateurs inactifs (admin seulement)
+const { archiverEtSupprimer } = require('./archiveUsers');
+app.post('/api/admin/archiver-utilisateurs', (req, res) => {
+  // TODO: ajouter une vérification d'admin si besoin
+  archiverEtSupprimer((err, result) => {
+    if (err) {
+      res.status(500).send({ success: false, message: 'Erreur lors de l\'archivage', error: err });
+    } else {
+      res.send({ success: true, message: 'Archivage terminé', details: result });
+    }
+  });
+});
+
+// Route pour créer un Payment Intent Stripe
+app.post("/api/create-payment-intent", async (req, res) => {
+  const { amount, commande_id, paymentMethodId } = req.body;
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Non connecté" });
+  }
+  console.log(" Demande de Payment Intent:", { amount, commande_id, paymentMethodId });
+
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ error: "Montant invalide" });
+  }
+
+  try {
+    // 1. Récupérer ou créer le customer Stripe pour l'utilisateur
+    const userId = req.session.user.id;
+    let customerId = null;
+    // Utilise le champ stripe_client_id (et non stripe_customer_id)
+    const [userRows] = await pool.promise().query('SELECT stripe_client_id, email FROM utilisateur WHERE id = ?', [userId]);
+    if (userRows.length > 0 && userRows[0].stripe_client_id) {
+      customerId = userRows[0].stripe_client_id;
+    } else {
+      // Créer le customer Stripe si pas encore fait
+      const customer = await stripe.customers.create({
+        email: userRows[0]?.email || undefined,
+        metadata: { userId: String(userId) }
+      });
+      customerId = customer.id;
+      await pool.promise().query('UPDATE utilisateur SET stripe_client_id = ? WHERE id = ?', [customerId, userId]);
+    }
+
+
+    // 2. Créer le PaymentIntent avec Stripe (NE PAS confirmer ici !)
+    const paymentIntentParams = {
+      amount: Math.round(amount * 100),
+      currency: "eur",
+      customer: customerId,
+      // On ne met PAS confirm ici, le front doit gérer la confirmation
+      payment_method: paymentMethodId || undefined,
+      // Ne PAS mettre off_session ici, Stripe refuse si confirm n'est pas true
+      automatic_payment_methods: paymentMethodId ? undefined : { enabled: true },
+    };
+    if (!paymentMethodId) {
+      paymentIntentParams.setup_future_usage = 'off_session';
+    }
+    // Toujours confirm: false ici !
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+
+    console.log("✅ Payment Intent créé:", paymentIntent.id);
+
+    // 3. Sauvegarder en base de données
+    const paiementId = uuid.v4();
+    const insertPaiementQuery = `
+      INSERT INTO paiements (
+        id, 
+        payment_intent_id, 
+        commande_id, 
+        montant, 
+        devise, 
+        statut, 
+        date_creation
+      ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+    `;
+
+    await pool.promise().execute(insertPaiementQuery, [
+      paiementId,
+      paymentIntent.id,
+      commande_id || null,
+      amount,
+      'EUR',
+      'pending'
+    ]);
+
+    console.log(" Paiement sauvegardé en BDD:", paiementId);
+
+    res.json({ 
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      paiementId: paiementId,
+      customerId: customerId
+    });
+
+  } catch (err) {
+    console.error(" Erreur:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Route pour mettre à jour le statut du paiement
+app.post("/api/update-payment-status", async (req, res) => {
+  const { payment_intent_id, statut, commande_id } = req.body;
+
+  console.log("🔄 Mise à jour statut paiement:", { payment_intent_id, statut, commande_id });
+
+  try {
+    // Mettre à jour le statut du paiement
+    const updateQuery = `
+      UPDATE paiements 
+      SET statut = ?, date_mise_a_jour = NOW() 
+      WHERE payment_intent_id = ?
+    `;
+
+    const [result] = await pool.promise().execute(updateQuery, [statut, payment_intent_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Paiement non trouvé" });
+    }
+
+    // Si le paiement est réussi et qu'on a un commande_id, mettre à jour le statut de la commande
+    if (statut === 'succeeded' && commande_id) {
+      const updateCommandeQuery = `
+        UPDATE commande 
+        SET statut_paiement = 'paye', date_paiement = NOW() 
+        WHERE id = ?
+      `;
+
+      try {
+        await pool.promise().execute(updateCommandeQuery, [commande_id]);
+        console.log("✅ Statut commande mis à jour:", commande_id);
+      } catch (commandeError) {
+        console.error("⚠️ Erreur mise à jour commande (non bloquant):", commandeError);
+        // On ne bloque pas la réponse même si la mise à jour de la commande échoue
+      }
+    }
+
+    console.log("✅ Statut paiement mis à jour:", statut);
+    res.json({ 
+      success: true, 
+      message: "Statut mis à jour",
+      payment_intent_id: payment_intent_id,
+      commande_id: commande_id 
+    });
+
+  } catch (err) {
+    console.error("❌ Erreur mise à jour:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
@@ -826,6 +945,146 @@ app.get('/api/adresses', (req, res) => {
     } else {
       res.send({ success: true, adresses: rows });
     }
+  });
+});
+
+// --- Cartes bancaires Stripe ---
+// Récupérer la liste des cartes de l'utilisateur (GET)
+app.get('/api/cartes', (req, res) => {
+  if (!req.session.user) return res.status(401).json({ success: false, message: 'Non connecté' });
+  const userId = req.session.user.id;
+  pool.query('SELECT id, stripe_payment_method_id, brand, last4, exp_month, exp_year, par_defaut, nom FROM carte_bancaire WHERE id_utilisateur = ? ORDER BY par_defaut DESC, id DESC', [userId], (err, rows) => {
+    if (err) return res.status(500).json({ success: false, message: 'Erreur SQL', err });
+    res.json({ success: true, cartes: rows });
+  });
+});
+
+// Enregistrer une carte bancaire (POST)
+app.post('/api/cartes', (req, res) => {
+  if (!req.session.user) return res.status(401).json({ success: false, message: 'Non connecté' });
+  const userId = req.session.user.id;
+  const { stripe_payment_method_id, card_number, last4, exp_month, exp_year, par_defaut, nom } = req.body;
+
+  // On accepte soit stripe_payment_method_id (mode Stripe), soit card_number (mode manuel)
+  if (!stripe_payment_method_id && !card_number) {
+    return res.status(400).json({ success: false, message: 'Numéro de carte ou Stripe Payment Method requis' });
+  }
+  if (!last4 || !exp_month || !exp_year) {
+    return res.status(400).json({ success: false, message: 'Champs manquants' });
+  }
+
+  // Si on a un numéro de carte, on valide et on identifie la marque
+  let brand = req.body.brand;
+  if (card_number) {
+    const numberValidation = cardValidator.number(card_number);
+    if (!numberValidation.isValid) {
+      return res.status(400).json({ success: false, message: 'Numéro de carte invalide' });
+    }
+    brand = numberValidation.card ? numberValidation.card.type : null;
+    if (!brand) {
+      return res.status(400).json({ success: false, message: 'Type de carte non reconnu' });
+    }
+  }
+
+  // Attacher le paymentMethodId Stripe au customer Stripe si fourni
+  async function attachStripeCardAndInsert() {
+    let customerId;
+    let stripeBrand = null;
+    try {
+      // Récupérer le customer Stripe de l'utilisateur
+      const [userRows] = await pool.promise().query('SELECT stripe_client_id, email FROM utilisateur WHERE id = ?', [userId]);
+      if (userRows.length > 0 && userRows[0].stripe_client_id) {
+        customerId = userRows[0].stripe_client_id;
+      } else {
+        // Créer le customer Stripe si pas encore fait
+        const customer = await stripe.customers.create({
+          email: userRows[0]?.email || undefined,
+          metadata: { userId: String(userId) }
+        });
+        customerId = customer.id;
+        await pool.promise().query('UPDATE utilisateur SET stripe_client_id = ? WHERE id = ?', [customerId, userId]);
+      }
+
+      // Attacher la carte Stripe au customer Stripe
+      if (stripe_payment_method_id) {
+        await stripe.paymentMethods.attach(stripe_payment_method_id, { customer: customerId });
+        // Récupérer la marque de la carte Stripe
+        const paymentMethod = await stripe.paymentMethods.retrieve(stripe_payment_method_id);
+        stripeBrand = paymentMethod.card ? paymentMethod.card.brand : null;
+        // Définir comme carte par défaut Stripe si demandé
+        if (par_defaut) {
+          await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: stripe_payment_method_id } });
+        }
+      }
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'Erreur Stripe', error: err.message });
+    }
+
+    // Si par_defaut = 1, on retire le défaut des autres cartes
+    if (par_defaut) {
+      pool.query('UPDATE carte_bancaire SET par_defaut = 0 WHERE id_utilisateur = ?', [userId], () => {
+        insertCard();
+      });
+    } else {
+      insertCard();
+    }
+    function insertCard() {
+      pool.query(
+        'INSERT INTO carte_bancaire (id_utilisateur, stripe_payment_method_id, brand, last4, exp_month, exp_year, par_defaut, nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [userId, stripe_payment_method_id || null, stripeBrand, last4, exp_month, exp_year, par_defaut ? 1 : 0, nom || null],
+        (err, result) => {
+          if (err) return res.status(500).json({ success: false, message: 'Erreur SQL', err });
+          res.json({ success: true, id: result.insertId, brand: stripeBrand });
+        }
+      );
+    }
+  }
+  if (stripe_payment_method_id) {
+    attachStripeCardAndInsert();
+  } else {
+    // Pas Stripe, insertion classique
+    if (par_defaut) {
+      pool.query('UPDATE carte_bancaire SET par_defaut = 0 WHERE id_utilisateur = ?', [userId], () => {
+        insertCard();
+      });
+    } else {
+      insertCard();
+    }
+    function insertCard() {
+      pool.query(
+        'INSERT INTO carte_bancaire (id_utilisateur, stripe_payment_method_id, brand, last4, exp_month, exp_year, par_defaut, nom) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [userId, null, brand, last4, exp_month, exp_year, par_defaut ? 1 : 0, nom || null],
+        (err, result) => {
+          if (err) return res.status(500).json({ success: false, message: 'Erreur SQL', err });
+          res.json({ success: true, id: result.insertId, brand });
+        }
+      );
+    }
+  }
+});
+
+// Supprimer une carte
+app.delete('/api/cartes/:id', (req, res) => {
+  if (!req.session.user) return res.status(401).json({ success: false, message: 'Non connecté' });
+  const userId = req.session.user.id;
+  const cardId = req.params.id;
+  pool.query('DELETE FROM carte_bancaire WHERE id = ? AND id_utilisateur = ?', [cardId, userId], (err, result) => {
+    if (err) return res.status(500).json({ success: false, message: 'Erreur SQL', err });
+    res.json({ success: true });
+  });
+});
+
+// Définir une carte par défaut
+app.put('/api/cartes/:id/defaut', (req, res) => {
+  if (!req.session.user) return res.status(401).json({ success: false, message: 'Non connecté' });
+  const userId = req.session.user.id;
+  const cardId = req.params.id;
+  pool.query('UPDATE carte_bancaire SET par_defaut = 0 WHERE id_utilisateur = ?', [userId], (err) => {
+    if (err) return res.status(500).json({ success: false, message: 'Erreur SQL', err });
+    pool.query('UPDATE carte_bancaire SET par_defaut = 1 WHERE id = ? AND id_utilisateur = ?', [cardId, userId], (err2) => {
+      if (err2) return res.status(500).json({ success: false, message: 'Erreur SQL', err2 });
+      res.json({ success: true });
+    });
   });
 });
 
@@ -1025,4 +1284,35 @@ app.put('/api/adresses/:id/defaut', (req, res) => {
       });
     });
   });
+});
+// Vider complètement le panier de l'utilisateur
+app.delete('/api/panier', (req, res) => {
+  if (!req.session.user) {
+    res.send({ success: false, message: 'Non connecté' });
+    return;
+  }
+  pool.query('DELETE FROM panier WHERE id_utilisateur = ?', [req.session.user.id], (err, result) => {
+    if (err) {
+      res.send({ success: false, message: err });
+    } else {
+      res.send({ success: true, message: 'Panier vidé' });
+    }
+  });
+});
+// Route GET pour récupérer les commandes de l'utilisateur connecté
+app.get("/api/commandes", (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ success: false, message: "Non connecté" });
+  }
+  const userId = req.session.user.id;
+  pool.query(
+    "SELECT * FROM commande WHERE id_utilisateur = ? ORDER BY date DESC",
+    [userId],
+    (err, rows) => {
+      if (err) {
+        return res.status(500).json({ success: false, message: "Erreur SQL", error: err });
+      }
+      res.json({ success: true, commandes: rows });
+    }
+  );
 });
