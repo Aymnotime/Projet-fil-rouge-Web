@@ -34,7 +34,7 @@
         return;
         }
 
-        console.log(`${result.affectedRows} utilisateur(s) archivé(s)`);
+        // Suppression du log
 
         // 2️⃣ Supprimer les utilisateurs archivés de la table principale
         const deleteArchivedFromUser = `
@@ -48,7 +48,7 @@
             return;
         }
 
-        console.log(`${result2.affectedRows} utilisateur(s) supprimé(s) de 'utilisateur'`);
+        // Suppression du log
 
         // 3️⃣ Supprimer ceux archivés depuis plus d’un an
         const deleteOldArchives = `
@@ -62,7 +62,7 @@
             return;
             }
 
-            console.log(`${result3.affectedRows} archive(s) supprimée(s)`);
+            // Suppression du log
             pool.end();
         });
         });
