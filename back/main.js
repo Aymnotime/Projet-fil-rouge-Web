@@ -4,27 +4,25 @@ const session = require("express-session");
 const bcrypt = require("bcrypt");
 const uuid = require("uuid");
 const dotenv = require("dotenv");
-// Garder les deux versions combinées
 const isAdmin = require('./isAdmin');
 const cors = require('cors');
 const PDFDocument = require("pdfkit");
 
 
 
-// Charger les variables d'environnement EN PREMIER
+
 require('dotenv').config({ path: './back/.env' });
 dotenv.config();
 
-// Initialiser Stripe APRÈS avoir chargé les variables d'environnement
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors({
-  origin: true, // adapte selon le port de ton front
-  credentials: true               // essentiel pour les cookies de session
+  origin: true, 
+  credentials: true               
 }));
 
-// Mais récupérer le router si nécessaire
+
 const router = express.Router();
 app.use(express.json());
 app.use(
@@ -33,8 +31,8 @@ app.use(
     resave: false,
     saveUninitialized: true,
     cookie: {
-      // Configurer les cookies pour qu'ils fonctionnent en développement
-      secure: false, // Mettre à true en production avec HTTPS
+
+      secure: false, 
       sameSite: 'lax', // Protection CSRF de base
       maxAge: 24 * 60 * 60 * 1000 // 1 jour
     }
@@ -56,15 +54,171 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0,
 });
 
-// Middleware de log pour les requêtes (débogage)
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
-  next();
+
+// ===================== ROUTES POUR LES CATÉGORIES (ADMIN) =====================
+
+// Récupérer toutes les catégories (admin)
+app.get("/api/admin/categories", isAdmin, (req, res) => {
+  pool.query("SELECT * FROM categories ORDER BY nom ASC", (err, rows) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des catégories:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      console.log("Catégories récupérées:", rows.length);
+      res.send({ success: true, categories: rows });
+    }
+  });
 });
 
-app.get("/api/admin/commandes", isAdmin, (req, res) => {
-  // Ici, req.session.user est garanti d'être défini et admin
-  res.send("Bienvenue sur le dashboard admin !");
+// Ajouter une nouvelle catégorie (admin)
+app.post("/api/admin/categories", isAdmin, (req, res) => {
+  const { nom, description } = req.body;
+
+  if (!nom || nom.trim().length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Le nom de la catégorie est obligatoire"
+    });
+  }
+
+  // Vérifier si la catégorie existe déjà
+  pool.query("SELECT * FROM categories WHERE nom = ?", [nom.trim()], (err, existing) => {
+    if (err) {
+      console.error("Erreur vérification catégorie existante:", err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Une catégorie avec ce nom existe déjà"
+      });
+    }
+
+    // Ajouter la nouvelle catégorie
+    const id = uuid.v4();
+    pool.query(
+      "INSERT INTO categories (id, nom, description) VALUES (?, ?, ?)",
+      [id, nom.trim(), description || ""],
+      (err, result) => {
+        if (err) {
+          console.error("Erreur lors de l'ajout de la catégorie:", err);
+          return res.status(500).json({ 
+            success: false, 
+            message: "Erreur lors de l'ajout de la catégorie",
+            error: err.message
+          });
+        }
+        
+        console.log("Catégorie ajoutée avec succès, ID:", id);
+        return res.json({
+          success: true,
+          message: "Catégorie ajoutée avec succès",
+          category: {
+            id,
+            nom: nom.trim(),
+            description: description || ""
+          }
+        });
+      }
+    );
+  });
+});
+
+// Modifier une catégorie (admin)
+app.put("/api/admin/categories/:id", isAdmin, (req, res) => {
+  const id = req.params.id;
+  const { nom, description } = req.body;
+
+  if (!nom || nom.trim().length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Le nom de la catégorie est obligatoire"
+    });
+  }
+
+  // Vérifier si une autre catégorie avec ce nom existe déjà
+  pool.query("SELECT * FROM categories WHERE nom = ? AND id != ?", [nom.trim(), id], (err, existing) => {
+    if (err) {
+      console.error("Erreur vérification catégorie existante:", err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Une autre catégorie avec ce nom existe déjà"
+      });
+    }
+
+    // Modifier la catégorie
+    pool.query(
+      "UPDATE categories SET nom = ?, description = ? WHERE id = ?",
+      [nom.trim(), description || "", id],
+      (err, result) => {
+        if (err) {
+          console.error("Erreur lors de la modification de la catégorie:", err);
+          return res.status(500).json({ 
+            success: false, 
+            message: "Erreur lors de la modification de la catégorie",
+            error: err.message
+          });
+        }
+        
+        if (result.affectedRows === 0) {
+          return res.status(404).json({
+            success: false,
+            message: "Catégorie non trouvée"
+          });
+        }
+        
+        console.log("Catégorie modifiée avec succès, ID:", id);
+        return res.json({
+          success: true,
+          message: "Catégorie modifiée avec succès",
+          category: {
+            id,
+            nom: nom.trim(),
+            description: description || ""
+          }
+        });
+      }
+    );
+  });
+});
+
+// Supprimer une catégorie (admin)
+app.delete("/api/admin/categories/:id", isAdmin, (req, res) => {
+  const id = req.params.id;
+  
+  // Vérifier d'abord si des produits utilisent cette catégorie
+  pool.query("SELECT COUNT(*) as count FROM produits WHERE categorie_id = ?", [id], (err, result) => {
+    if (err) {
+      console.error("Erreur vérification produits liés:", err);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+
+    const produitsLies = result[0].count;
+    if (produitsLies > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Impossible de supprimer cette catégorie car ${produitsLies} produit(s) l'utilisent encore.`
+      });
+    }
+
+    // Supprimer la catégorie
+    pool.query("DELETE FROM categories WHERE id = ?", [id], (err, result) => {
+      if (err) {
+        console.error("Erreur suppression catégorie:", err);
+        res.status(500).send({ success: false, message: err.message });
+      } else if (result.affectedRows === 0) {
+        res.status(404).send({ success: false, message: "Catégorie non trouvée" });
+      } else {
+        console.log("Catégorie supprimée:", id);
+        res.send({ success: true, message: "Catégorie supprimée avec succès" });
+      }
+    });
+  });
 });
 
 // Retourne tous les utilisateurs (admin seulement)
@@ -141,7 +295,7 @@ app.put("/api/admin/commandes/:id/statut", isAdmin, (req, res) => {
 
 // Retourne tous les produits (admin seulement)
 app.get("/api/admin/produits", isAdmin, (req, res) => {
-  pool.query("SELECT * FROM stock", (err, rows) => {
+  pool.query("SELECT * FROM produits", (err, rows) => {
     if (err) {
       res.status(500).send({ success: false, message: err.message });
     } else {
@@ -154,7 +308,7 @@ app.get("/api/admin/produits", isAdmin, (req, res) => {
 app.post("/api/admin/produits", isAdmin, (req, res) => {
   console.log("Requête reçue pour ajouter un produit:", req.body);
   
-  const { nom, prix, description, quantite, image } = req.body;
+  const { nom, prix, description, quantite, image, categorie_id } = req.body; // Ajouter categorie_id
 
   // Validation de base
   if (!nom || !prix) {
@@ -169,8 +323,8 @@ app.post("/api/admin/produits", isAdmin, (req, res) => {
   console.log("ID généré pour le nouveau produit:", id);
   
   pool.query(
-    "INSERT INTO stock (id, nom, prix, description, quantite, image) VALUES (?, ?, ?, ?, ?, ?)",
-    [id, nom, parseFloat(prix).toFixed(2), description || "", quantite || 0, image || ""],
+    "INSERT INTO produits (id, nom, prix, description, quantite, image, categorie_id) VALUES (?, ?, ?, ?, ?, ?, ?)", // Ajouter categorie_id
+    [id, nom, parseFloat(prix).toFixed(2), description || "", quantite || 0, image || "", categorie_id || null], // Ajouter categorie_id
     (err, result) => {
       if (err) {
         console.error("Erreur lors de l'ajout du produit:", err);
@@ -191,54 +345,13 @@ app.post("/api/admin/produits", isAdmin, (req, res) => {
           prix: parseFloat(prix).toFixed(2),
           description: description || "",
           quantite: quantite || 0,
-          image: image || ""
+          image: image || "",
+          categorie_id: categorie_id || null // Ajouter categorie_id
         }
       });
     }
   );
 });
-
-// Ajouter un produit avec image URL explicite (admin seulement)
-app.post("/api/admin/produits/with-image", isAdmin, (req, res) => {
-  const { nom, prix, description, imageUrl } = req.body;
-
-  if (!nom || !prix) {
-    return res.status(400).json({
-      success: false,
-      message: "Le nom et le prix sont obligatoires"
-    });
-  }
-
-  const id = uuid.v4();
-  
-  pool.query(
-    "INSERT INTO stock (id, nom, prix, description, image) VALUES (?, ?, ?, ?, ?)",
-    [id, nom, parseFloat(prix).toFixed(2), description || "", imageUrl || ""],
-    (err, result) => {
-      if (err) {
-        console.error("Erreur lors de l'ajout du produit:", err);
-        return res.status(500).json({ 
-          success: false, 
-          message: "Erreur lors de l'ajout du produit",
-          error: err.message
-        });
-      }
-      
-      return res.json({
-        success: true,
-        message: "Produit ajouté avec succès",
-        produit: {
-          id,
-          nom,
-          prix: parseFloat(prix).toFixed(2),
-          description: description || "",
-          image: imageUrl || ""
-        }
-      });
-    }
-  );
-});
-
 // Supprimer un utilisateur (admin seulement)
 app.delete("/api/admin/utilisateurs/:id", isAdmin, (req, res) => {
   const id = req.params.id;
@@ -266,12 +379,200 @@ app.delete("/api/admin/commandes/:id", isAdmin, (req, res) => {
 // Supprimer un produit (admin seulement)
 app.delete("/api/admin/produits/:id", isAdmin, (req, res) => {
   const id = req.params.id;
-  pool.query("DELETE FROM stock WHERE id = ?", [id], (err, result) => {
+  pool.query("DELETE FROM produits WHERE id = ?", [id], (err, result) => {
     if (err) {
       res.send({ success: false, message: err });
     } else {
       res.send({ success: true });
     }
+  });
+});
+
+
+// Ajoutez ces routes après les autres routes admin (vers ligne 400)
+
+// ===================== ROUTES POUR LES STATISTIQUES DE VENTES =====================
+
+// Statistiques des ventes par jour
+app.get("/api/admin/stats/ventes-par-jour", isAdmin, (req, res) => {
+  const query = `
+    SELECT 
+      DATE(c.date) as date_vente,
+      COUNT(*) as nombre_commandes,
+      SUM(
+        CASE 
+          WHEN c.produits LIKE '%:%' THEN
+            (SELECT SUM(
+              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
+              p.prix
+            ) FROM JSON_TABLE(
+              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
+              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
+            ) item
+            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1))
+          ELSE
+            (SELECT SUM(p.prix) FROM produits p 
+             WHERE FIND_IN_SET(p.id, c.produits))
+        END
+      ) as chiffre_affaires
+    FROM commande c
+    WHERE c.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      AND c.statut_paiement IN ('Payé', 'paye')
+    GROUP BY DATE(c.date)
+    ORDER BY DATE(c.date) DESC
+    LIMIT 30
+  `;
+
+  pool.query(query, (err, rows) => {
+    if (err) {
+      console.error("Erreur statistiques ventes par jour:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      res.send({ success: true, data: rows });
+    }
+  });
+});
+
+// Statistiques du panier moyen
+app.get("/api/admin/stats/panier-moyen", isAdmin, (req, res) => {
+  const query = `
+    SELECT 
+      DATE(c.date) as date_commande,
+      AVG(
+        CASE 
+          WHEN c.produits LIKE '%:%' THEN
+            (SELECT SUM(
+              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
+              p.prix
+            ) FROM JSON_TABLE(
+              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
+              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
+            ) item
+            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1))
+          ELSE
+            (SELECT SUM(p.prix) FROM produits p 
+             WHERE FIND_IN_SET(p.id, c.produits))
+        END
+      ) as panier_moyen,
+      COUNT(*) as nombre_commandes
+    FROM commande c
+    WHERE c.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      AND c.statut_paiement IN ('Payé', 'paye')
+    GROUP BY DATE(c.date)
+    ORDER BY DATE(c.date) DESC
+    LIMIT 30
+  `;
+
+  pool.query(query, (err, rows) => {
+    if (err) {
+      console.error("Erreur statistiques panier moyen:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      res.send({ success: true, data: rows });
+    }
+  });
+});
+
+// Statistiques des ventes par catégorie
+app.get("/api/admin/stats/ventes-par-categorie", isAdmin, (req, res) => {
+  const query = `
+    SELECT 
+      COALESCE(cat.nom, 'Sans catégorie') as categorie,
+      COUNT(DISTINCT c.id) as nombre_commandes,
+      SUM(
+        CASE 
+          WHEN c.produits LIKE '%:%' THEN
+            (SELECT SUM(
+              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
+              p.prix
+            ) FROM JSON_TABLE(
+              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
+              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
+            ) item
+            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1)
+            WHERE p.categorie_id = cat.id)
+          ELSE
+            (SELECT SUM(p.prix) FROM produits p 
+             WHERE FIND_IN_SET(p.id, c.produits) AND p.categorie_id = cat.id)
+        END
+      ) as chiffre_affaires
+    FROM commande c
+    CROSS JOIN produits p
+    LEFT JOIN categories cat ON p.categorie_id = cat.id
+    WHERE c.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      AND c.statut_paiement IN ('Payé', 'paye')
+      AND (
+        (c.produits LIKE '%:%' AND FIND_IN_SET(SUBSTRING_INDEX(c.produits, ':', 1), c.produits)) OR
+        (c.produits NOT LIKE '%:%' AND FIND_IN_SET(p.id, c.produits))
+      )
+    GROUP BY cat.id, cat.nom
+    HAVING chiffre_affaires > 0
+    ORDER BY chiffre_affaires DESC
+  `;
+
+  pool.query(query, (err, rows) => {
+    if (err) {
+      console.error("Erreur statistiques ventes par catégorie:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      res.send({ success: true, data: rows });
+    }
+  });
+});
+
+// Statistiques générales du dashboard
+app.get("/api/admin/stats/generales", isAdmin, (req, res) => {
+  const queries = {
+    totalCommandes: `
+      SELECT COUNT(*) as total 
+      FROM commande 
+      WHERE statut_paiement IN ('Payé', 'paye')
+    `,
+    chiffreAffairesTotal: `
+      SELECT SUM(
+        CASE 
+          WHEN c.produits LIKE '%:%' THEN
+            (SELECT SUM(
+              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
+              p.prix
+            ) FROM JSON_TABLE(
+              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
+              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
+            ) item
+            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1))
+          ELSE
+            (SELECT SUM(p.prix) FROM produits p 
+             WHERE FIND_IN_SET(p.id, c.produits))
+        END
+      ) as total
+      FROM commande c
+      WHERE c.statut_paiement IN ('Payé', 'paye')
+    `,
+    totalUtilisateurs: `SELECT COUNT(*) as total FROM utilisateur`,
+    totalProduits: `SELECT COUNT(*) as total FROM produits`
+  };
+
+  const results = {};
+  let completedQueries = 0;
+  let hasError = false;
+
+  Object.keys(queries).forEach(key => {
+    pool.query(queries[key], (err, rows) => {
+      if (err && !hasError) {
+        hasError = true;
+        console.error(`Erreur statistique ${key}:`, err);
+        return res.status(500).send({ success: false, message: err.message });
+      }
+      
+      if (!hasError) {
+        results[key] = rows[0].total || 0;
+        completedQueries++;
+        
+        if (completedQueries === Object.keys(queries).length) {
+          res.send({ success: true, data: results });
+        }
+      }
+    });
   });
 });
 
@@ -490,7 +791,7 @@ app.post("/api/commande", (req, res) => {
 
     const produitsParsed = JSON.parse(produits);
 
-    pool.query('SELECT * FROM stock', (err, rows) => {
+    pool.query('SELECT * FROM produits', (err, rows) => {
         if (err) {
             res.send({ success: false, message: err });
         } else {
@@ -534,7 +835,7 @@ app.get("/api/commandes", (req, res) => {
     }
 
     const commands = rows;
-    pool.query('SELECT * FROM stock', (err, rows) => {
+    pool.query('SELECT * FROM produits', (err, rows) => {
       if (err) {
         res.send({ success: false, message: err });
         return;
@@ -586,7 +887,7 @@ app.get('/api/articles', (req, res) => {
 });
 
 app.get("/api/produits", (req, res) => {
-  pool.query("SELECT * FROM stock", (err, rows) => {
+  pool.query("SELECT * FROM produits", (err, rows) => {
     if (err) {
       res.send({ error: err });
     } else {
@@ -598,7 +899,7 @@ app.get("/api/produits", (req, res) => {
 // Corriger cette route pour utiliser la table stock au lieu de produits
 app.delete("/api/produits/:id", (req, res) => {
   const id = req.params.id;
-  pool.query("DELETE FROM stock WHERE id = ?", [id], (err, rows) => {
+  pool.query("DELETE FROM produits WHERE id = ?", [id], (err, rows) => {
     if (err) {
       res.send({ success: false, message: err });
     } else {
@@ -616,7 +917,7 @@ app.post("/api/produits", (req, res) => {
   const id = uuid.v4();
   
   pool.query(
-    "INSERT INTO stock (id, nom, quantite, prix, description) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO produits (id, nom, quantite, prix, description) VALUES (?, ?, ?, ?, ?)",
     [id, nom, quantite, prix, description],
     (err, rows) => {
       if (err) {
@@ -941,8 +1242,7 @@ app.post("/api/update-payment-status", async (req, res) => {
   }
 });
 
-require('./archiveUsers');
 
-app.listen(3001, () => {
-  console.log("Server is running on port 3000");
+
+
 });
