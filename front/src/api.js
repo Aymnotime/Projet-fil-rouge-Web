@@ -119,7 +119,6 @@ const api = {
     }
   ),
   
-  // Pour les uploads de fichiers réels (si besoin à l'avenir)
   uploadProduitWithFile: (formData) => axios.post(
     `/api/admin/produits/upload`, 
     formData, 
@@ -167,8 +166,36 @@ const api = {
   updateUserProfile: (userData) => axios.put(
     '/api/user/profile',
     userData
+  ),
+
+// Fonctions de gestion des catégories (Admin)
+getAdminCategories: () => axios.get('/api/admin/categories'),
+
+addCategory: (categoryData) => axios.post('/api/admin/categories', categoryData),
+
+updateCategory: (categoryId, categoryData) => axios.put(`/api/admin/categories/${categoryId}`, categoryData),
+
+deleteCategory: (categoryId) => axios.delete(`/api/admin/categories/${categoryId}`),
+
+// Ajoutez ces fonctions à la fin de l'objet api (avant la fermeture) :
+
+// Fonctions pour les statistiques de ventes
+getVentesParJour: () => axios.get('/api/admin/stats/ventes-par-jour'),
+
+getPanierMoyen: () => axios.get('/api/admin/stats/panier-moyen'),
+
+getVentesParCategorie: () => axios.get('/api/admin/stats/ventes-par-categorie'),
+
+getStatistiquesGenerales: () => axios.get('/api/admin/stats/generales'),
+
+  // Fonctions utilisateur
+  getUserOrders: () => axios.get('/api/user/commandes'),
+
+  getUserProfile: () => axios.get('/api/user/profile'),
+
+  updateUserProfile: (userData) => axios.put(
+    '/api/user/profile',
+    userData
   )
-
 };
-
 export default api;

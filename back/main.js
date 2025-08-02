@@ -14,12 +14,13 @@ const PDFDocument = require("pdfkit");
 require('dotenv').config({ path: './back/.env' });
 dotenv.config();
 
+
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors({
-  origin: true, 
-  credentials: true               
+  origin: true, // adapte selon le port de ton front
+  credentials: true               // essentiel pour les cookies de session
 }));
 
 
@@ -31,8 +32,8 @@ app.use(
     resave: false,
     saveUninitialized: true,
     cookie: {
-
-      secure: false, 
+      // Configurer les cookies pour qu'ils fonctionnent en développement
+      secure: false, // Mettre à true en production avec HTTPS
       sameSite: 'lax', // Protection CSRF de base
       maxAge: 24 * 60 * 60 * 1000 // 1 jour
     }
@@ -305,6 +306,7 @@ app.get("/api/admin/produits", isAdmin, (req, res) => {
 });
 
 // Ajouter un nouveau produit (admin seulement)
+// Ligne ~290 - Modifier la route d'ajout de produits
 app.post("/api/admin/produits", isAdmin, (req, res) => {
   console.log("Requête reçue pour ajouter un produit:", req.body);
   
@@ -388,10 +390,7 @@ app.delete("/api/admin/produits/:id", isAdmin, (req, res) => {
   });
 });
 
-
-// Ajoutez ces routes après les autres routes admin (vers ligne 400)
-
-// ===================== ROUTES POUR LES STATISTIQUES DE VENTES =====================
+// ===================== ROUTES POUR LES STATISTIQUES DE VENTES  =====================
 
 // Statistiques des ventes par jour
 app.get("/api/admin/stats/ventes-par-jour", isAdmin, (req, res) => {
@@ -399,25 +398,10 @@ app.get("/api/admin/stats/ventes-par-jour", isAdmin, (req, res) => {
     SELECT 
       DATE(c.date) as date_vente,
       COUNT(*) as nombre_commandes,
-      SUM(
-        CASE 
-          WHEN c.produits LIKE '%:%' THEN
-            (SELECT SUM(
-              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
-              p.prix
-            ) FROM JSON_TABLE(
-              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
-              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
-            ) item
-            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1))
-          ELSE
-            (SELECT SUM(p.prix) FROM produits p 
-             WHERE FIND_IN_SET(p.id, c.produits))
-        END
-      ) as chiffre_affaires
+      COALESCE(SUM(c.montant_total), 0) as chiffre_affaires
     FROM commande c
     WHERE c.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-      AND c.statut_paiement IN ('Payé', 'paye')
+      AND c.statut_paiement IN ('Payé', 'paye', 'Livré')
     GROUP BY DATE(c.date)
     ORDER BY DATE(c.date) DESC
     LIMIT 30
@@ -438,26 +422,12 @@ app.get("/api/admin/stats/panier-moyen", isAdmin, (req, res) => {
   const query = `
     SELECT 
       DATE(c.date) as date_commande,
-      AVG(
-        CASE 
-          WHEN c.produits LIKE '%:%' THEN
-            (SELECT SUM(
-              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
-              p.prix
-            ) FROM JSON_TABLE(
-              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
-              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
-            ) item
-            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1))
-          ELSE
-            (SELECT SUM(p.prix) FROM produits p 
-             WHERE FIND_IN_SET(p.id, c.produits))
-        END
-      ) as panier_moyen,
+      ROUND(AVG(COALESCE(c.montant_total, 0)), 2) as panier_moyen,
       COUNT(*) as nombre_commandes
     FROM commande c
     WHERE c.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-      AND c.statut_paiement IN ('Payé', 'paye')
+      AND c.statut_paiement IN ('Payé', 'paye', 'Livré')
+      AND COALESCE(c.montant_total, 0) > 0
     GROUP BY DATE(c.date)
     ORDER BY DATE(c.date) DESC
     LIMIT 30
@@ -473,38 +443,19 @@ app.get("/api/admin/stats/panier-moyen", isAdmin, (req, res) => {
   });
 });
 
-// Statistiques des ventes par catégorie
+// Statistiques des ventes par catégorie (version simplifiée)
 app.get("/api/admin/stats/ventes-par-categorie", isAdmin, (req, res) => {
   const query = `
     SELECT 
       COALESCE(cat.nom, 'Sans catégorie') as categorie,
       COUNT(DISTINCT c.id) as nombre_commandes,
-      SUM(
-        CASE 
-          WHEN c.produits LIKE '%:%' THEN
-            (SELECT SUM(
-              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
-              p.prix
-            ) FROM JSON_TABLE(
-              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
-              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
-            ) item
-            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1)
-            WHERE p.categorie_id = cat.id)
-          ELSE
-            (SELECT SUM(p.prix) FROM produits p 
-             WHERE FIND_IN_SET(p.id, c.produits) AND p.categorie_id = cat.id)
-        END
-      ) as chiffre_affaires
+      COALESCE(SUM(c.montant_total), 0) as chiffre_affaires
     FROM commande c
-    CROSS JOIN produits p
+    LEFT JOIN produits p ON FIND_IN_SET(p.id, REPLACE(c.produits, ':', ',')) > 0
     LEFT JOIN categories cat ON p.categorie_id = cat.id
     WHERE c.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-      AND c.statut_paiement IN ('Payé', 'paye')
-      AND (
-        (c.produits LIKE '%:%' AND FIND_IN_SET(SUBSTRING_INDEX(c.produits, ':', 1), c.produits)) OR
-        (c.produits NOT LIKE '%:%' AND FIND_IN_SET(p.id, c.produits))
-      )
+      AND c.statut_paiement IN ('Payé', 'paye', 'Livré')
+      AND COALESCE(c.montant_total, 0) > 0
     GROUP BY cat.id, cat.nom
     HAVING chiffre_affaires > 0
     ORDER BY chiffre_affaires DESC
@@ -520,36 +471,35 @@ app.get("/api/admin/stats/ventes-par-categorie", isAdmin, (req, res) => {
   });
 });
 
-// Statistiques générales du dashboard
+// Statistiques générales du dashboard (version corrigée)
 app.get("/api/admin/stats/generales", isAdmin, (req, res) => {
   const queries = {
     totalCommandes: `
       SELECT COUNT(*) as total 
       FROM commande 
-      WHERE statut_paiement IN ('Payé', 'paye')
+      WHERE statut_paiement IN ('Payé', 'paye', 'Livré')
     `,
     chiffreAffairesTotal: `
-      SELECT SUM(
-        CASE 
-          WHEN c.produits LIKE '%:%' THEN
-            (SELECT SUM(
-              CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(item.value, ':', -1), ',', 1) AS DECIMAL(10,2)) * 
-              p.prix
-            ) FROM JSON_TABLE(
-              CONCAT('[', REPLACE(REPLACE(c.produits, ':', '":'), ',', ',"'), ']'), 
-              '$[*]' COLUMNS (value VARCHAR(255) PATH '$')
-            ) item
-            JOIN produits p ON p.id = SUBSTRING_INDEX(item.value, ':', 1))
-          ELSE
-            (SELECT SUM(p.prix) FROM produits p 
-             WHERE FIND_IN_SET(p.id, c.produits))
-        END
-      ) as total
-      FROM commande c
-      WHERE c.statut_paiement IN ('Payé', 'paye')
+      SELECT COALESCE(SUM(montant_total), 0) as total
+      FROM commande 
+      WHERE statut_paiement IN ('Payé', 'paye', 'Livré')
+        AND COALESCE(montant_total, 0) > 0
     `,
     totalUtilisateurs: `SELECT COUNT(*) as total FROM utilisateur`,
-    totalProduits: `SELECT COUNT(*) as total FROM produits`
+    totalProduits: `SELECT COUNT(*) as total FROM produits`,
+    commandesEnAttente: `
+      SELECT COUNT(*) as total 
+      FROM commande 
+      WHERE statut_paiement = 'En attente'
+    `,
+    chiffreAffairesMoisActuel: `
+      SELECT COALESCE(SUM(montant_total), 0) as total
+      FROM commande 
+      WHERE statut_paiement IN ('Payé', 'paye', 'Livré')
+        AND MONTH(date) = MONTH(CURDATE())
+        AND YEAR(date) = YEAR(CURDATE())
+        AND COALESCE(montant_total, 0) > 0
+    `
   };
 
   const results = {};
@@ -798,6 +748,7 @@ app.post("/api/commande", (req, res) => {
             const stock = rows;
             let allProductsExist = true;
             let total = 0;
+            
             produitsParsed.forEach((produit) => {
                 const product = stock.find((p) => p.id === produit.id);
                 if (!product) {
@@ -812,23 +763,117 @@ app.post("/api/commande", (req, res) => {
                 return;
             }
 
-            pool.query('INSERT INTO commande (id, date, produits, id_utilisateur) VALUES (?, ?, ?, ?)', [id, date, produits, req.session.user.id], (err, rows) => {
-                if (err) {
-                    res.send({ success: false, message: err });
+            // AJOUT DU MONTANT TOTAL
+            pool.query(
+                'INSERT INTO commande (id, date, produits, id_utilisateur, montant_total, statut_paiement) VALUES (?, ?, ?, ?, ?, ?)', 
+                [id, date, produits, req.session.user.id, total.toFixed(2), 'En attente'], 
+                (err, rows) => {
+                    if (err) {
+                        res.send({ success: false, message: err });
+                    } else {
+                        res.send({ 
+                            success: true, 
+                            message: "success",
+                            commande_id: id,
+                            montant_total: total.toFixed(2)
+                        });
+                    }
                 }
-
-                res.send({ success: true, message: "success" });
-            });
+            );
         }
     });
 });
 
+app.post("/api/commande", (req, res) => {
+    if (!req.session.user) {
+        res.send({ success: false, message: "Non connecté" });
+        return;
+    }
+
+    const { produits } = req.body;
+
+    if (!produits) {
+        res.send({ success: false, message: "Veuillez remplir tous les champs" });
+        return;
+    }
+
+    const id = uuid.v4();
+    const date = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+    const produitsParsed = JSON.parse(produits);
+
+    pool.query('SELECT * FROM produits', (err, rows) => {
+        if (err) {
+            res.send({ success: false, message: err });
+        } else {
+            const stock = rows;
+            let allProductsExist = true;
+            let total = 0;
+            
+            produitsParsed.forEach((produit) => {
+                const product = stock.find((p) => p.id === produit.id);
+                if (!product) {
+                    allProductsExist = false;
+                } else {
+                    total += product.prix * produit.quantite;
+                }
+            });
+
+            if (!allProductsExist) {
+                res.send({ success: false, message: "Un ou plusieurs produits n'existent pas" });
+                return;
+            }
+
+            // INSERTION avec statut_paiement 
+            pool.query(
+                'INSERT INTO commande (id, date, produits, id_utilisateur, montant_total, statut_paiement) VALUES (?, ?, ?, ?, ?, ?)', 
+                [id, date, produits, req.session.user.id, total.toFixed(2), 'En attente'], 
+                (err, rows) => {
+                    if (err) {
+                        console.error("Erreur création commande:", err);
+                        res.send({ success: false, message: err.message });
+                    } else {
+                        res.send({ 
+                            success: true, 
+                            message: "success",
+                            commande_id: id,
+                            montant_total: total.toFixed(2)
+                        });
+                    }
+                }
+            );
+        }
+    });
+});
+
+// Retourne toutes les commandes (admin seulement)
+app.get("/api/admin/commandes", isAdmin, (req, res) => {
+  pool.query(`
+    SELECT 
+      c.*,
+      u.nom,
+      u.prenom,
+      u.email
+    FROM commande c
+    LEFT JOIN utilisateur u ON c.id_utilisateur = u.id
+    ORDER BY c.date DESC
+  `, (err, rows) => {
+    if (err) {
+      console.error("Erreur récupération commandes admin:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      res.send({ success: true, commandes: rows });
+    }
+  });
+});
+
+// Retourne les commandes de l'utilisateur connecté
 app.get("/api/commandes", (req, res) => {
   if (!req.session.user) {
     return res.status(401).send({ success: false, message: "Non connecté" });
   }
 
-  pool.query('SELECT * FROM commande WHERE id_utilisateur = ?', [req.session.user.id], (err, rows) => {
+  pool.query('SELECT * FROM commande WHERE id_utilisateur = ? ORDER BY date DESC', [req.session.user.id], (err, rows) => {
     if (err) {
       res.send({ success: false, message: err });
       return;
@@ -848,10 +893,10 @@ app.get("/api/commandes", (req, res) => {
           const productDetails = stock.find((p) => p.id === product.id);
           return {
             ...product,
-            nom: productDetails.nom,
-            prix: productDetails.prix,
-            image: productDetails.image,
-            description: productDetails.description,
+            nom: productDetails ? productDetails.nom : 'Produit non trouvé',
+            prix: productDetails ? productDetails.prix : 0,
+            image: productDetails ? productDetails.image : '',
+            description: productDetails ? productDetails.description : '',
           };
         });
 
@@ -1135,7 +1180,7 @@ app.post("/api/create-payment-intent", async (req, res) => {
   }
 
   try {
-    // 1. Créer le Payment Intent avec Stripe
+    
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100), // convertir en centimes
       currency: "eur",
@@ -1146,7 +1191,6 @@ app.post("/api/create-payment-intent", async (req, res) => {
 
     console.log("✅ Payment Intent créé:", paymentIntent.id);
 
-    // 2. Sauvegarder en base de données (AVEC pool au lieu de db)
     const paiementId = uuid.v4();
     const insertPaiementQuery = `
       INSERT INTO paiements (
@@ -1242,7 +1286,24 @@ app.post("/api/update-payment-status", async (req, res) => {
   }
 });
 
-
-
-
+// AJOUTEZ CETTE ROUTE PUBLIQUE POUR LES CATÉGORIES (avant les routes admin)
+app.get("/api/categories", (req, res) => {
+  pool.query("SELECT * FROM categories ORDER BY nom ASC", (err, rows) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des catégories:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      console.log("Catégories publiques récupérées:", rows.length);
+      res.send({ success: true, categories: rows });
+    }
+  });
 });
+
+require('dotenv').config({ path: './back/.env' });  
+
+require('./archiveUsers');
+
+app.listen(3001, () => {
+  console.log("Server is running on port 3001");
+});
+
