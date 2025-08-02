@@ -267,46 +267,28 @@ const filteredProducts = produits.filter(product => {
     });
   };
 
-  const handleAddCategory = (e) => {
-    e.preventDefault();
+ const handleAddCategory = async (e) => {
+  e.preventDefault();
+  setIsSubmitting(true);
+  
+  try {
+    const response = await api.addCategory(newCategory);
     
-    if (!newCategory.nom.trim()) {
-      setError("Le nom de la catégorie est requis");
-      return;
+    if (response.data.success) {
+      setCategories([...categories, response.data.category]);
+      setNewCategory({ nom: '', description: '' });
+      setShowAddCategoryForm(false);
+      alert('Catégorie ajoutée avec succès !');
+    } else {
+      alert('Erreur : ' + response.data.message);
     }
-
-    setError("");
-    setIsSubmitting(true);
-    
-    const categoryData = {
-      nom: newCategory.nom.trim(),
-      description: newCategory.description.trim() || ""
-    };
-
-    api.addCategory(categoryData)
-      .then(res => {
-        if (res.data && res.data.success) {
-          setCategories([...categories, res.data.category]);
-          setError(`✅ Catégorie "${res.data.category.nom}" ajoutée avec succès!`);
-          setTimeout(() => setError(""), 3000);
-          resetCategoryForm();
-          setShowAddCategoryForm(false);
-        } else {
-          setError(`❌ ${res.data?.message || "Erreur lors de l'ajout de la catégorie"}`);
-        }
-      })
-      .catch(err => {
-        console.error("Erreur lors de l'ajout de la catégorie:", err);
-        if (err.response) {
-          setError(`❌ Erreur ${err.response.status}: ${err.response.data?.message || "Problème lors de l'ajout"}`);
-        } else {
-          setError("❌ Erreur de connexion");
-        }
-      })
-      .finally(() => {
-        setIsSubmitting(false);
-      });
-  };
+  } catch (error) {
+    console.error('Erreur lors de l\'ajout de la catégorie:', error);
+    alert('Erreur lors de l\'ajout de la catégorie : ' + (error.response?.data?.message || error.message));
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleEditCategory = (category) => {
     setEditingCategory(category);
@@ -2042,7 +2024,7 @@ const handleAddProduct = (e) => {
           }}
           onClick={handleToggleCategories}
         >
-          {showCategories ? "Fermer la gestion des catégories" : "Gérer les catégories"}
+          {showCategories ? "Fermer la gestion des catégories" : "Gestions des catégories"}
         </button>
       </div>
 

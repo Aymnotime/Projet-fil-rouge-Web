@@ -177,6 +177,8 @@ updateCategory: (categoryId, categoryData) => axios.put(`/api/admin/categories/$
 
 deleteCategory: (categoryId) => axios.delete(`/api/admin/categories/${categoryId}`),
 
+getCategories: () => axiosInstance.get('/categories'),
+
 // Ajoutez ces fonctions à la fin de l'objet api (avant la fermeture) :
 
 // Fonctions pour les statistiques de ventes

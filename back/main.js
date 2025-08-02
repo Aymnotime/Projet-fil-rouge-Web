@@ -57,6 +57,23 @@ const pool = mysql.createPool({
 
 
 // ===================== ROUTES POUR LES CATÉGORIES (ADMIN) =====================
+// Récupérer toutes les catégories (admin)
+// AJOUTEZ ces routes APRÈS la configuration du pool de connexion (ligne ~52) :
+
+// ===================== ROUTE PUBLIQUE POUR LES CATÉGORIES =====================
+app.get("/api/categories", (req, res) => {
+  pool.query("SELECT * FROM categories ORDER BY nom ASC", (err, rows) => {
+    if (err) {
+      console.error("Erreur lors de la récupération des catégories:", err);
+      res.status(500).send({ success: false, message: err.message });
+    } else {
+      console.log("Catégories publiques récupérées:", rows.length);
+      res.send({ success: true, categories: rows });
+    }
+  });
+});
+
+// ===================== ROUTES POUR LES CATÉGORIES (ADMIN) =====================
 
 // Récupérer toutes les catégories (admin)
 app.get("/api/admin/categories", isAdmin, (req, res) => {
@@ -824,7 +841,6 @@ app.post("/api/commande", (req, res) => {
                 return;
             }
 
-            // INSERTION avec statut_paiement 
             pool.query(
                 'INSERT INTO commande (id, date, produits, id_utilisateur, montant_total, statut_paiement) VALUES (?, ?, ?, ?, ?, ?)', 
                 [id, date, produits, req.session.user.id, total.toFixed(2), 'En attente'], 
