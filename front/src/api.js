@@ -19,6 +19,20 @@ const api = {
     return axios.get('/api/user');
   },
 
+  // Fonction pour demander un reset de mot de passe
+  forgotPassword(email) {
+    return axios.post('/api/forgot-password', { email });
+  },
+
+  // Fonction pour réinitialiser le mot de passe avec le token
+  resetPassword(token, password, confirmPassword) {
+    return axios.post('/api/reset-password', { 
+      token, 
+      password, 
+      confirmPassword 
+    });
+  },
+
   // Vérifier si l'utilisateur actuel est admin
   checkAdmin() {
     return axios.post('/api/check-admin');
@@ -36,8 +50,6 @@ const api = {
     return axios.get('/api/commandes');
   },
 
-  
-
   newCommande(produits) {
     return axios.post('/api/commande', { produits });
   },
@@ -48,6 +60,11 @@ const api = {
 
   getProduits() {
     return axios.get('/api/produits');
+  },
+
+  // NOUVELLE FONCTION : Récupérer les catégories
+  getCategories() {
+    return axios.get('/api/categories');
   },
 
   getProduitById(id) {
@@ -199,5 +216,6 @@ getStatistiquesGenerales: () => axios.get('/api/admin/stats/generales'),
     '/api/user/profile',
     userData
   )
+
 };
 export default api;

@@ -5,8 +5,14 @@ import "./commande.css";
 
 const CommandePage = () => {
   const [commandes, setCommandes] = useState([]);
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
+    api.getUser().then((res) => {
+      if (res.data && res.data.user) {
+        setUserEmail(res.data.user.email);
+      }
+    });
     const fetchCommandes = () => {
       api
         .getCommandes()
@@ -61,6 +67,7 @@ const CommandePage = () => {
                 <StripeContainer 
                   amount={totalAmount}
                   commande_id={commande.id}
+                  email={userEmail}
                 />
               </div>
             </div>

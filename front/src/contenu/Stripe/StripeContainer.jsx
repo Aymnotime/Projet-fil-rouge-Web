@@ -86,6 +86,7 @@ const StripeContainer = (props) => {
         commande_id={commande_id}
         clientSecret={clientSecret}
         onSuccess={onSuccess} // Passer le callback au CheckoutForm
+        email={props.email}
       />
     </Elements>
   );

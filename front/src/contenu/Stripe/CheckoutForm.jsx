@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useElements, useStripe, CardElement } from "@stripe/react-stripe-js";
 import axios from "axios";
 
-export default function CheckoutForm({ amount, commande_id = null, clientSecret, onSuccess }) {
+export default function CheckoutForm({ amount, commande_id = null, clientSecret, onSuccess, email }) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -80,7 +80,7 @@ export default function CheckoutForm({ amount, commande_id = null, clientSecret,
         card: cardElement,
         billing_details: {
           name: "Client test",
-          email: "test@example.com",
+          email: email || "test@example.com",
         },
       },
     });
@@ -95,7 +95,7 @@ export default function CheckoutForm({ amount, commande_id = null, clientSecret,
       
       // Mettre à jour le statut du paiement en base
       try {
-        await axios.post("http://localhost:3000/api/update-payment-status", {
+        await axios.post("http://localhost:3001/api/update-payment-status", {
           payment_intent_id: paymentIntent.id,
           statut: "succeeded",
           commande_id: commande_id

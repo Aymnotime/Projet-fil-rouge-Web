@@ -30,8 +30,8 @@ body{
 
 .toggle-dark-mode {
   position: fixed;
-  top: 10px;
-  right: 10px; /* Le bouton reste à droite */
+  top: 5px;
+  left: 350px; /* Le bouton est maintenant à gauche */
   padding: 10px 20px;
   background-color: #007bff; /* Couleur de fond */
   color: white; /* Couleur du texte */
