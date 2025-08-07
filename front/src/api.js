@@ -1,221 +1,100 @@
 import axios from 'axios';
-axios.defaults.baseURL = 'http://localhost:3001'; // L'URL de ton backend
-axios.defaults.withCredentials = true; // Pour envoyer les cookies
+
+// Configuration de l'instance axios
+const axiosInstance = axios.create({
+  baseURL: 'http://localhost:3001/api',
+  withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Intercepteur pour gérer les erreurs
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('Erreur API:', error);
+    return Promise.reject(error);
+  }
+);
 
 const api = {
-  register(nom, prenom, email, password, confirm) {
-    return axios.post('/api/register', { nom, prenom, email, password, confirm });
-  },
-
-  login(email, password, requireAdmin = false) {
-    return axios.post('/api/login', { email, password, requireAdmin });
-  },
-
-  logout() {
-    return axios.get('/api/logout');
-  },
-
-  getUser() {
-    return axios.get('/api/user');
-  },
-
-  // Fonction pour demander un reset de mot de passe
-  forgotPassword(email) {
-    return axios.post('/api/forgot-password', { email });
-  },
-
-  // Fonction pour réinitialiser le mot de passe avec le token
-  resetPassword(token, password, confirmPassword) {
-    return axios.post('/api/reset-password', { 
-      token, 
-      password, 
-      confirmPassword 
-    });
-  },
-
-  // Vérifier si l'utilisateur actuel est admin
-  checkAdmin() {
-    return axios.post('/api/check-admin');
-  },
-
-  updateUser(nom, prenom, email) {
-    return axios.post('/api/user', { nom, prenom, email });
-  },
-
-  updatePassword(oldPassword, password, confirm) {
-    return axios.post('/api/password', { oldPassword, password, confirm });
-  },
-
-  getCommandes() {
-    return axios.get('/api/commandes');
-  },
-
-  newCommande(produits) {
-    return axios.post('/api/commande', { produits });
-  },
-
-  getEquipes() {
-    return axios.get('/api/equipes');
-  },
-
-  getProduits() {
-    return axios.get('/api/produits');
-  },
-
-  // NOUVELLE FONCTION : Récupérer les catégories
-  getCategories() {
-    return axios.get('/api/categories');
-  },
-
-  getProduitById(id) {
-    return axios.get(`/api/produits/${id}`);
-  },
-
-  getArticles() {
-    return axios.get('/api/articles/');
-  },
-
-  deleteProduit(id) {
-    return axios.delete('/api/produits/' + id);
-  },
-
-  postProduit(titre, contenu) {
-    return axios.post('/api/produits', { titre, contenu });
-  },
-
-  createPaymentIntent(amount, commande_id = null) {
-    console.log('📤 Envoi de la requête API avec montant:', amount, 'et commande_id:', commande_id);
-    return axios.post('/api/create-payment-intent', { amount, commande_id });
-  },
-
-  updatePaymentStatus(payment_intent_id, statut) {
-    return axios.post('/api/update-payment-status', { 
-      payment_intent_id, 
-      statut 
-    });
-  },
-
-  getAdminCommandes: () => axios.get("/api/admin/commandes"),
-  getAdminUtilisateurs: () => axios.get("/api/admin/utilisateurs"),
-  getAdminCommandesByUser: (id) => axios.get(`/api/admin/commandes/${id}`),
-  getAdminProduits: () => axios.get("/api/admin/produits"),
-
-  deleteUser: (id) => axios.delete(`/api/admin/utilisateurs/${id}`),
-  deleteCommande: (id) => axios.delete(`/api/admin/commandes/${id}`),
-  deleteProduit: (id) => axios.delete(`/api/admin/produits/${id}`),
-
-  // Nouvelle fonction pour mettre à jour le statut d'une commande
-  updateCommandeStatut: (commandeId, nouveauStatut) => axios.put(
-    `/api/admin/commandes/${commandeId}/statut`, 
-    { statutPaiement: nouveauStatut }
-  ),
-
-  // Méthode modifiée pour envoyer des données JSON standard (non multipart)
-  addProduit: (productData) => {
-    console.log("Envoi de données produit:", productData);
-    return axios.post(
-      `/api/admin/produits`, 
-      productData, 
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-  },
-
-  // Méthode alternative pour l'ajout de produit avec des paramètres explicites
-  // Mise à jour pour inclure la quantité
-  addProduitWithImageUrl: (nom, prix, description, imageUrl, quantite = 0) => axios.post(
-    `/api/admin/produits/with-image`,
-    { nom, prix, description, imageUrl, quantite },
-    { 
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    }
-  ),
+  // Auth
+  login: (credentials) => axiosInstance.post('/login', credentials),
+  register: (userData) => axiosInstance.post('/register', userData),
+  logout: () => axiosInstance.get('/logout'),
+  getUser: () => axiosInstance.get('/user'),
+  updateUser: (userData) => axiosInstance.post('/user', userData),
+  updatePassword: (passwordData) => axiosInstance.post('/password', passwordData),
   
-  uploadProduitWithFile: (formData) => axios.post(
-    `/api/admin/produits/upload`, 
-    formData, 
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    }
-  ),
+  // Produits
+  getProducts: () => axiosInstance.get('/produits'),
+  getProduits: () => axiosInstance.get('/produits'),
+  addProduct: (productData) => axiosInstance.post('/produits', productData),
+  deleteProduct: (id) => axiosInstance.delete(`/produits/${id}`),
+  
+  // Catégories
+  getCategories: () => axiosInstance.get('/categories'),
+  getAdminCategories: () => axiosInstance.get('/admin/categories'),
+  addCategory: (categoryData) => axiosInstance.post('/admin/categories', categoryData),
+  updateCategory: (id, categoryData) => axiosInstance.put(`/admin/categories/${id}`, categoryData),
+  deleteCategory: (id) => axiosInstance.delete(`/admin/categories/${id}`),
+  
+  // Commandes
+  createOrder: (orderData) => axiosInstance.post('/commande', orderData),
+  newCommande: (orderData) => axiosInstance.post('/commande', orderData),
+  getOrders: () => axiosInstance.get('/commandes'),
+  getCommandes: () => axiosInstance.get('/commandes'),
+  
 
-  // Fonctions du panier d'achat
-  addToCart: (produitId, quantite) => axios.post(
-    '/api/panier/ajouter',
-    { produitId, quantite }
-  ),
-
-  getCart: () => axios.get('/api/panier'),
-
-  updateCartItem: (produitId, quantite) => axios.put(
-    '/api/panier/modifier',
-    { produitId, quantite }
-  ),
-
-  removeFromCart: (produitId) => axios.delete(
-    `/api/panier/supprimer/${produitId}`
-  ),
-
-  clearCart: () => axios.delete('/api/panier/vider'),
-
-  // Fonctions de paiement et commandes
-  processPayment: (paymentData) => axios.post(
-    '/api/paiement',
-    paymentData
-  ),
-
-  getCommandeDetails: (commandeId) => axios.get(
-    `/api/commandes/${commandeId}`
-  ),
-
-  // Fonctions utilisateur
-  getUserOrders: () => axios.get('/api/user/commandes'),
-
-  getUserProfile: () => axios.get('/api/user/profile'),
-
-  updateUserProfile: (userData) => axios.put(
-    '/api/user/profile',
-    userData
-  ),
-
-// Fonctions de gestion des catégories (Admin)
-getAdminCategories: () => axios.get('/api/admin/categories'),
-
-addCategory: (categoryData) => axios.post('/api/admin/categories', categoryData),
-
-updateCategory: (categoryId, categoryData) => axios.put(`/api/admin/categories/${categoryId}`, categoryData),
-
-deleteCategory: (categoryId) => axios.delete(`/api/admin/categories/${categoryId}`),
-
-getCategories: () => axiosInstance.get('/categories'),
-
-// Ajoutez ces fonctions à la fin de l'objet api (avant la fermeture) :
-
-// Fonctions pour les statistiques de ventes
-getVentesParJour: () => axios.get('/api/admin/stats/ventes-par-jour'),
-
-getPanierMoyen: () => axios.get('/api/admin/stats/panier-moyen'),
-
-getVentesParCategorie: () => axios.get('/api/admin/stats/ventes-par-categorie'),
-
-getStatistiquesGenerales: () => axios.get('/api/admin/stats/generales'),
-
-  // Fonctions utilisateur
-  getUserOrders: () => axios.get('/api/user/commandes'),
-
-  getUserProfile: () => axios.get('/api/user/profile'),
-
-  updateUserProfile: (userData) => axios.put(
-    '/api/user/profile',
-    userData
-  )
-
+  // Admin
+  checkAdmin: () => axiosInstance.post('/check-admin'),
+  getAdminUsers: () => axiosInstance.get('/admin/utilisateurs'),
+  getAdminUtilisateurs: () => axiosInstance.get('/admin/utilisateurs'),
+  getAdminCommandes: () => axiosInstance.get('/admin/commandes'),
+  getAdminProducts: () => axiosInstance.get('/admin/produits'),
+  getAdminProduits: () => axiosInstance.get('/admin/produits'),
+  addAdminProduct: (productData) => axiosInstance.post('/admin/produits', productData),
+  deleteAdminProduct: (id) => axiosInstance.delete(`/admin/produits/${id}`),
+  deleteAdminUser: (id) => axiosInstance.delete(`/admin/utilisateurs/${id}`),
+  deleteAdminCommande: (id) => axiosInstance.delete(`/admin/commandes/${id}`),
+  updateCommandeStatus: (id, statusData) => axiosInstance.put(`/admin/commandes/${id}/statut`, statusData),
+  updateCommandeStatut: (id, newStatut) => axiosInstance.put(`/admin/commandes/${id}/statut`, { statutPaiement: newStatut }),
+  
+  // Statistiques
+  getVentesParJour: () => axiosInstance.get('/admin/stats/ventes-par-jour'),
+  getPanierMoyen: () => axiosInstance.get('/admin/stats/panier-moyen'),
+  getVentesParCategorie: () => axiosInstance.get('/admin/stats/ventes-par-categorie'),
+  getStatistiquesGenerales: () => axiosInstance.get('/admin/stats/generales'),
+  
+  // Admin commandes par utilisateur
+  getAdminCommandesByUser: (userId) => axiosInstance.get(`/admin/commandes/${userId}`),
+  
+  // Debug
+  debugCommandes: () => axiosInstance.get('/admin/debug/commandes'),
+  
+  // Paiements
+  createPaymentIntent: (paymentData) => axiosInstance.post('/create-payment-intent', paymentData),
+  updatePaymentStatus: (statusData) => axiosInstance.post('/update-payment-status', statusData),
+  
+  // Autres
+  getEquipes: () => axiosInstance.get('/equipes'),
+  getArticles: () => axiosInstance.get('/articles'),
+  getAnnonces: () => axiosInstance.get('/annonces'),
+  
+  // Gestion compte utilisateur
+  downloadUserData: () => axiosInstance.get('/user/pdf', { responseType: 'blob' }),
+  deleteUserAccount: () => axiosInstance.delete('/user/delete'),
+  
+  // Mot de passe oublié
+  forgotPassword: (email) => axiosInstance.post('/forgot-password', { email }),
+  resetPassword: (resetData) => axiosInstance.post('/reset-password', resetData),
+  verifyResetToken: (token) => axiosInstance.get(`/verify-reset-token/${token}`),
+  
+  // Tests
+  testApi: () => axiosInstance.get('/test'),
+  testDb: () => axiosInstance.get('/test/db'),
+  testProducts: () => axiosInstance.get('/test/produits'),
 };
+
 export default api;

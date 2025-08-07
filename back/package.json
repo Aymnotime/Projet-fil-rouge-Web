@@ -19,6 +19,7 @@
     "express-session": "^1.17.3",
     "mysql": "^2.18.1",
     "mysql2": "^3.6.1",
+    "nodemailer": "^7.0.5",
     "pdfkit": "^0.17.0",
     "stripe": "^18.2.1",
     "uuid": "^9.0.1"

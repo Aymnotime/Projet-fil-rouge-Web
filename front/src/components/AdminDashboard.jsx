@@ -726,23 +726,33 @@ const PieChart = ({ data, valueKey, labelKey, title }) => {
 
   // Gérer le changement de statut d'une commande
   const handleChangeStatutCommande = (id, newStatut) => {
+    console.log(`🔄 Mise à jour statut commande ${id} vers: ${newStatut}`);
+    
     // Indiquer quelle commande est en cours de mise à jour
     setStatusUpdating(id);
     
     // Appel à l'API pour mettre à jour le statut dans la base de données
     api.updateCommandeStatut(id, newStatut)
       .then(res => {
+        console.log("✅ Réponse API mise à jour statut:", res.data);
         if (res.data && res.data.success) {
           // Mise à jour réussie, mettre à jour l'état local
           setCommandes(commandes.map(cmd => 
-            cmd.id === id ? {...cmd, statutPaiement: newStatut} : cmd
+            cmd.id === id ? {
+              ...cmd, 
+              statut_paiement: newStatut,
+              statutPaiement: newStatut  // Compatibilité
+            } : cmd
           ));
+          console.log(`✅ Statut mis à jour localement pour commande ${id}`);
         } else {
           // En cas d'erreur dans la réponse
+          console.error("❌ Erreur dans la réponse:", res.data);
           setError(res.data?.message || "Erreur lors de la mise à jour du statut");
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error("❌ Erreur communication serveur:", error);
         setError("Erreur de communication avec le serveur");
       })
       .finally(() => {
@@ -1203,14 +1213,14 @@ const handleAddProduct = (e) => {
         <td>
           <div style={{ position: "relative" }}>
             <select 
-              value={cmd.statutPaiement || "En attente"} 
+              value={cmd.statut_paiement || cmd.statutPaiement || "En attente"} 
               onChange={(e) => handleChangeStatutCommande(cmd.id, e.target.value)}
               style={{
                 padding: "6px",
                 borderRadius: "4px",
                 border: "1px solid #ccc",
-                backgroundColor: getStatutColor(cmd.statutPaiement),
-                color: cmd.statutPaiement === "En attente" ? "#000" : "#fff",
+                backgroundColor: getStatutColor(cmd.statut_paiement || cmd.statutPaiement),
+                color: (cmd.statut_paiement || cmd.statutPaiement) === "En attente" ? "#000" : "#fff",
                 width: "100%",
                 cursor: statusUpdating === cmd.id ? "wait" : "pointer",
                 opacity: statusUpdating === cmd.id ? 0.7 : 1
