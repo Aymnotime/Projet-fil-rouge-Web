@@ -714,125 +714,6 @@ app.get("/api/admin/commandes", isAdmin, (req, res) => {
   });
 });
 
-// Route pour les statistiques générales - CORRIGER LES NOMS DE TABLES
-app.get("/api/admin/stats/generales", isAdmin, (req, res) => {
-  console.log("📊 Récupération des statistiques générales...");
-  
-  // Requête pour compter les commandes
-  const commandesQuery = "SELECT COUNT(*) as total FROM commande";
-  
-  // Requête pour calculer le chiffre d'affaires
-  const caQuery = "SELECT SUM(montant_total) as chiffre_affaires FROM commande WHERE statut_paiement = 'paye'";
-  
-  // Requête pour compter les utilisateurs
-  const utilisateursQuery = "SELECT COUNT(*) as total FROM utilisateur";
-  
-  // Requête pour compter les produits
-  const produitsQuery = "SELECT COUNT(*) as total FROM produits";
-  
-  // Exécuter toutes les requêtes
-  pool.query(commandesQuery, (err1, commandes) => {
-    if (err1) {
-      console.error("❌ Erreur comptage commandes:", err1);
-      return res.status(500).json({ success: false, message: err1.message });
-    }
-    
-    pool.query(caQuery, (err2, ca) => {
-      if (err2) {
-        console.error("❌ Erreur calcul CA:", err2);
-        return res.status(500).json({ success: false, message: err2.message });
-      }
-      
-      pool.query(utilisateursQuery, (err3, utilisateurs) => {
-        if (err3) {
-          console.error("❌ Erreur comptage utilisateurs:", err3);
-          return res.status(500).json({ success: false, message: err3.message });
-        }
-        
-        pool.query(produitsQuery, (err4, produits) => {
-          if (err4) {
-            console.error("❌ Erreur comptage produits:", err4);
-            return res.status(500).json({ success: false, message: err4.message });
-          }
-          
-          const stats = {
-            total_commandes: commandes[0].total || 0,
-            chiffre_affaires: ca[0].chiffre_affaires || 0,
-            total_utilisateurs: utilisateurs[0].total || 0,
-            total_produits: produits[0].total || 0
-          };
-          
-          console.log("✅ Statistiques générales:", stats);
-          
-          res.json({
-            success: true,
-            data: stats
-          });
-        });
-      });
-    });
-  });
-});
-
-// ✅ AJOUTER une route de debug pour vérifier les données
-app.get("/api/admin/debug/commandes", isAdmin, (req, res) => {
-  console.log("🐛 Debug: vérification des données de commandes...");
-  
-  const queries = {
-    totalCommandes: "SELECT COUNT(*) as total FROM commande",
-    commandesAvecStatut: `
-      SELECT statut_paiement, COUNT(*) as count 
-      FROM commande 
-      GROUP BY statut_paiement
-    `,
-    commandesAvecMontant: `
-      SELECT 
-        COUNT(*) as total_avec_montant,
-        AVG(CASE 
-          WHEN montant_total IS NOT NULL AND montant_total != '' AND montant_total != '0'
-          THEN CAST(montant_total AS DECIMAL(10,2))
-          ELSE NULL 
-        END) as montant_moyen,
-        SUM(CASE 
-          WHEN montant_total IS NOT NULL AND montant_total != '' AND montant_total != '0'
-          THEN CAST(montant_total AS DECIMAL(10,2))
-          ELSE 0 
-        END) as somme_totale
-      FROM commande 
-      WHERE montant_total IS NOT NULL 
-        AND montant_total != '' 
-        AND montant_total != '0'
-    `,
-    exemplesCommandes: `
-      SELECT id, date, montant_total, statut_paiement, id_utilisateur
-      FROM commande 
-      ORDER BY date DESC 
-      LIMIT 5
-    `
-  };
-  
-  const results = {};
-  let completed = 0;
-  
-  Object.keys(queries).forEach(key => {
-    pool.query(queries[key], (err, rows) => {
-      if (err) {
-        console.error(`🐛 Erreur debug ${key}:`, err);
-        results[key] = { error: err.message };
-      } else {
-        results[key] = rows;
-        console.log(`🐛 ${key}:`, rows);
-      }
-      
-      completed++;
-      if (completed === Object.keys(queries).length) {
-        res.send({ success: true, debug: results });
-      }
-    });
-  });
-});
-
-
 app.get("/api", (req, res) => {
   res.send("API is up");
 });
@@ -1726,9 +1607,19 @@ app.post('/api/check-admin', (req, res) => {
 });
 
 app.post("/api/create-payment-intent", async (req, res) => {
+  // Vérifier que l'utilisateur est connecté
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Non autorisé - connexion requise" });
+  }
+
   const { amount, commande_id } = req.body;
 
-  console.log("📝 Demande de Payment Intent:", { amount, commande_id });
+  console.log("📝 Demande de Payment Intent:", { 
+    amount, 
+    commande_id, 
+    utilisateur: req.session.user.email,
+    fonction: req.session.user.fonction 
+  });
 
   if (!amount || isNaN(amount) || amount <= 0) {
     return res.status(400).json({ error: "Montant invalide" });
@@ -1792,9 +1683,19 @@ app.post("/api/create-payment-intent", async (req, res) => {
 
 // Route pour mettre à jour le statut du paiement
 app.post("/api/update-payment-status", async (req, res) => {
+  // Vérifier que l'utilisateur est connecté
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Non autorisé - connexion requise" });
+  }
+
   const { payment_intent_id, statut, commande_id } = req.body;
 
-  console.log("🔄 Mise à jour statut paiement:", { payment_intent_id, statut, commande_id });
+  console.log("🔄 Mise à jour statut paiement:", { 
+    payment_intent_id, 
+    statut, 
+    commande_id,
+    utilisateur: req.session.user.email 
+  });
 
   try {
     // Mettre à jour le statut du paiement
