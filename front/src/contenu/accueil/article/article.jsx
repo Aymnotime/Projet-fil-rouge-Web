@@ -19,7 +19,7 @@ function ProduitsAleatoires(props) {
 
   // Récupérer les produits depuis votre API
   useEffect(() => {
-    api.getProduits().then((response) => {
+    api.getProducts().then((response) => {
       if (response.data) {
         // Mélanger les produits et prendre les 5 premiers
         const produitsAlea = melangerTableau(response.data).slice(0, 5);

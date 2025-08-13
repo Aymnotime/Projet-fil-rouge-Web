@@ -10,11 +10,6 @@ const CommandePage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.getUser().then((res) => {
-      if (res.data && res.data.user) {
-        setUserEmail(res.data.user.email);
-      }
-    });
     const fetchCommandes = () => {
       api
         .getCommandes()

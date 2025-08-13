@@ -22,7 +22,8 @@ const StripeContainer = (props) => {
     console.log('🔄 Création du Payment Intent pour:', amount, '€, commande:', commande_id);
     
     // Un seul appel API ici dans StripeContainer
-    api.createPaymentIntent(amount, commande_id)
+   // api.createPaymentIntent(amount, commande_id)
+   api.createPaymentIntent({ amount, commande_id })
       .then((response) => {
         console.log('📦 Réponse API complète:', response);
         console.log('📦 Data de la réponse:', response.data);
@@ -86,7 +87,6 @@ const StripeContainer = (props) => {
         commande_id={commande_id}
         clientSecret={clientSecret}
         onSuccess={onSuccess} // Passer le callback au CheckoutForm
-        email={props.email}
       />
     </Elements>
   );

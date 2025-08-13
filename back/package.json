@@ -4,8 +4,9 @@
   "description": "",
   "main": "main.js",
   "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon main.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node main.js"
   },
   "author": "",
   "license": "ISC",
@@ -18,7 +19,7 @@
     "express-session": "^1.17.3",
     "mysql": "^2.18.1",
     "mysql2": "^3.6.1",
-    "nodemailer": "^7.0.3",
+    "nodemailer": "^7.0.5",
     "pdfkit": "^0.17.0",
     "stripe": "^18.2.1",
     "uuid": "^9.0.1"
