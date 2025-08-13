@@ -8,25 +8,33 @@ import { useEffect } from "react";
 function Navbar(props) {
   const [openLogin, setOpenLogin] = React.useState(false);
   const [openRegister, setOpenRegister] = React.useState(false);
+  const [openForgotPassword, setOpenForgotPassword] = React.useState(false);
+  const [openResetPassword, setOpenResetPassword] = React.useState(false);
 
   const [nom, setNom] = React.useState("");
-  const [prenom, setPrenom] = React.useState("")
+  const [prenom, setPrenom] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
+  const [resetToken, setResetToken] = React.useState("");
+  const [forgotEmail, setForgotEmail] = React.useState("");
 
   const [error, setError] = React.useState("");
+  const [success, setSuccess] = React.useState("");
 
   const navigate = useNavigate();
 
   useEffect(() => {
     setError("");
+    setSuccess("");
     setNom("");
     setPrenom("");
     setEmail("");
     setPassword("");
     setPasswordConfirm("");
-  }, [openLogin, openRegister]);
+    setForgotEmail("");
+    setResetToken("");
+  }, [openLogin, openRegister, openForgotPassword, openResetPassword]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -68,6 +76,45 @@ function Navbar(props) {
     });
   }
 
+  const handleForgotPassword = (e) => {
+    e.preventDefault();
+    api.forgotPassword(forgotEmail).then((res) => {
+      if (res.data.success) {
+        setSuccess("Un email de réinitialisation a été envoyé à votre adresse.");
+        setError("");
+        // Optionnel : fermer le modal après 3 secondes
+        setTimeout(() => setOpenForgotPassword(false), 3000);
+      } else {
+        setError(res.data.message);
+        setSuccess("");
+      }
+    }).catch((err) => {
+      setError("Une erreur est survenue lors de l'envoi de l'email.");
+      setSuccess("");
+    });
+  }
+
+  const handleResetPassword = (e) => {
+    e.preventDefault();
+    api.resetPassword(resetToken, password, passwordConfirm).then((res) => {
+      if (res.data.success) {
+        setSuccess("Votre mot de passe a été réinitialisé avec succès.");
+        setError("");
+        // Rediriger vers la connexion après 2 secondes
+        setTimeout(() => {
+          setOpenResetPassword(false);
+          setOpenLogin(true);
+        }, 2000);
+      } else {
+        setError(res.data.message);
+        setSuccess("");
+      }
+    }).catch((err) => {
+      setError("Une erreur est survenue lors de la réinitialisation.");
+      setSuccess("");
+    });
+  }
+
   return (
     <>
       <Modal title="Connexion" show={openLogin} onClose={() => setOpenLogin(false)}>
@@ -75,6 +122,18 @@ function Navbar(props) {
           <input type="email" placeholder="Email" className="form-control" name="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" placeholder="Mot de passe" className="form-control" name="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <button type="submit" className="btn btn-primary">Connexion</button>
+          <div className="mt-2">
+            <button 
+              type="button" 
+              className="btn btn-link p-0 text-decoration-none" 
+              onClick={() => {
+                setOpenLogin(false);
+                setOpenForgotPassword(true);
+              }}
+            >
+              Mot de passe oublié ?
+            </button>
+          </div>
           {error && <div className="alert alert-danger w-100 mb-0">{error}</div>}
         </form>
       </Modal>
@@ -94,6 +153,76 @@ function Navbar(props) {
           </div>
           <button type="submit" className="btn btn-primary">Inscription</button>
           {error && <div className="alert alert-danger w-100 mb-0">{error}</div>}
+        </form>
+      </Modal>
+
+      <Modal title="Mot de passe oublié" show={openForgotPassword} onClose={() => setOpenForgotPassword(false)}>
+        <form onSubmit={handleForgotPassword}>
+          <div className="mb-3">
+            <p className="text-muted">Entrez votre adresse email pour recevoir un lien de réinitialisation de votre mot de passe.</p>
+          </div>
+          <input 
+            type="email" 
+            placeholder="Votre adresse email" 
+            className="form-control" 
+            name="forgotEmail" 
+            value={forgotEmail} 
+            onChange={(e) => setForgotEmail(e.target.value)} 
+            required 
+          />
+          <button type="submit" className="btn btn-primary">Envoyer le lien</button>
+          <div className="mt-2">
+            <button 
+              type="button" 
+              className="btn btn-link p-0 text-decoration-none" 
+              onClick={() => {
+                setOpenForgotPassword(false);
+                setOpenLogin(true);
+              }}
+            >
+              Retour à la connexion
+            </button>
+          </div>
+          {error && <div className="alert alert-danger w-100 mb-0">{error}</div>}
+          {success && <div className="alert alert-success w-100 mb-0">{success}</div>}
+        </form>
+      </Modal>
+
+      <Modal title="Réinitialiser le mot de passe" show={openResetPassword} onClose={() => setOpenResetPassword(false)}>
+        <form onSubmit={handleResetPassword}>
+          <div className="mb-3">
+            <p className="text-muted">Entrez votre nouveau mot de passe.</p>
+          </div>
+          <input 
+            type="text" 
+            placeholder="Code de réinitialisation" 
+            className="form-control" 
+            name="resetToken" 
+            value={resetToken} 
+            onChange={(e) => setResetToken(e.target.value)} 
+            required 
+          />
+          <input 
+            type="password" 
+            placeholder="Nouveau mot de passe" 
+            className="form-control" 
+            name="password" 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+            required 
+          />
+          <input 
+            type="password" 
+            placeholder="Confirmer le nouveau mot de passe" 
+            className="form-control" 
+            name="passwordConfirm" 
+            value={passwordConfirm} 
+            onChange={(e) => setPasswordConfirm(e.target.value)} 
+            required 
+          />
+          <button type="submit" className="btn btn-primary">Réinitialiser</button>
+          {error && <div className="alert alert-danger w-100 mb-0">{error}</div>}
+          {success && <div className="alert alert-success w-100 mb-0">{success}</div>}
         </form>
       </Modal>
 

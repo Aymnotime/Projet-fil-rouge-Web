@@ -78,19 +78,42 @@ function Boutique(props) {
   };
 
   const commander = () => {
-    api
-      .newCommande(
-        JSON.stringify(
-          props.panier.map((p) => ({ id: p.id, quantity: p.quantity }))
-        )
-      )
-      .then((response) => {
-        if (response.data) {
-          props.setPanier([]);
-          navigate("/compte?onglet=commandes");
-        }
-      });
+  console.log("🛒 Commande en cours:", props.panier);
+  
+  const commandeData = {
+    produits: JSON.stringify(
+      props.panier.map((p) => ({ 
+        id: p.id, 
+        quantity: p.quantity || 1 // S'assurer que quantity existe
+      }))
+    )
   };
+
+  console.log("📤 Données envoyées:", commandeData);
+
+  api
+    .newCommande(commandeData)
+    .then((response) => {
+      console.log("✅ Réponse commande:", response.data);
+      
+      if (response.data && response.data.success) {
+        props.setPanier([]);
+        console.log("🎉 Commande créée, redirection vers les commandes...");
+        
+        // Forcer un petit délai pour laisser le temps à la BDD de se mettre à jour
+        setTimeout(() => {
+          navigate("/compte?onglet=commandes");
+        }, 100);
+      } else {
+        console.error("❌ Erreur dans la réponse:", response.data);
+        alert("Erreur lors de la création de la commande: " + (response.data.message || "Erreur inconnue"));
+      }
+    })
+    .catch((error) => {
+      console.error("❌ Erreur lors de la commande:", error);
+      alert("Erreur lors de la création de la commande: " + error.message);
+    });
+};
 
   const sizePanier = props.panier.reduce(
     (acc, product) => acc + product.quantity,

@@ -1111,7 +1111,7 @@ app.post("/api/reset-password", (req, res) => {
     }
   );
 });
-// ...existing code...
+
 app.post("/api/commande", (req, res) => {
     if (!req.session.user) {
         res.send({ success: false, message: "Non connecté" });
