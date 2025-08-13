@@ -65,13 +65,12 @@ app.use(
     resave: false,
     saveUninitialized: true,
     cookie: {
-      secure: false,
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000
     }
   })
 );
-
 
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
