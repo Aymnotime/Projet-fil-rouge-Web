@@ -11,14 +11,7 @@ const cors = require('cors');
 const PDFDocument = require("pdfkit");
 
 
-
-
-
-const app = express();
-app.use(cors({
-  origin: true,
-  credentials: true 
-}));
+// ...existing code...
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com"; // Remplace <TON_FRONT_RENDER> par l'URL de ton front
 
@@ -51,6 +44,14 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS 
   }
 });
+
+const app = express();
+app.use(cors({
+  origin: true,
+  credentials: true 
+}));
+
+
 const router = express.Router();
 app.use(express.json());
 
@@ -1374,9 +1375,9 @@ app.get('/api/articles', (req, res) => {
 app.get("/api/produits", (req, res) => {
   pool.query("SELECT * FROM produits", (err, rows) => {
     if (err) {
-      res.send({ success: false, message: err });
+      res.send({ error: err });
     } else {
-      res.send({ success: true, produits: rows.slice(0, 20) });
+      res.send(rows.slice(0, 20));
     }
   });
 });
