@@ -11,7 +11,23 @@ const cors = require('cors');
 const PDFDocument = require("pdfkit");
 
 
+// ...existing code...
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com"; // Remplace <TON_FRONT_RENDER> par l'URL de ton front
+
+app.use(cors({
+  origin: [FRONTEND_URL],
+  credentials: true
+}));
+
+// ...existing code...
+
+// Route d'accueil pour vérifier que l'API fonctionne
+app.get("/", (req, res) => {
+  res.send("API M2L déployée et opérationnelle !");
+});
+
+// ...existing code...
 dotenv.config();
 
 if (!process.env.STRIPE_SECRET_KEY) {

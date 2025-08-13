@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Configuration de l'instance axios
 const axiosInstance = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: import.meta.env.VITE_API_URL || 'https://projet-fil-rouge-web-deployment.onrender.com/api',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
