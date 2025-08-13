@@ -1374,9 +1374,9 @@ app.get('/api/articles', (req, res) => {
 app.get("/api/produits", (req, res) => {
   pool.query("SELECT * FROM produits", (err, rows) => {
     if (err) {
-      res.send({ error: err });
+      res.send({ success: false, message: err });
     } else {
-      res.send(rows.slice(0, 20));
+      res.send({ success: true, produits: rows.slice(0, 20) });
     }
   });
 });
