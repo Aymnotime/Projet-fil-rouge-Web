@@ -5,6 +5,7 @@ import Accordion from "react-bootstrap/Accordion";
 import Form from "react-bootstrap/Form";
 import Button from "react-bootstrap/Button";
 import CommandePage from "./commande/commande";
+import api from "../../api";
 import Confidentialité from "../confidentialite/index";
 import { useLocation } from "react-router-dom";
 
@@ -43,6 +44,52 @@ function Compte(props) {
   const changementdemotdepasse = () => {
     setMdpodifie(true);
   };
+
+  const handleConfirmation = async () => {
+  try {
+    console.log("🚀 Envoi des données:", { nom, prenom, email });
+    
+    const response = await api.updateUser(nom, prenom, email);
+    
+    console.log("📥 Réponse reçue:", response.data);
+    
+    if (response.data.success) {
+      alert("Informations mises à jour avec succès !");
+      setModifie(false);
+      
+      // Mettre à jour les props utilisateur si nécessaire
+      if (props.setUser && response.data.user) {
+        props.setUser(response.data.user);
+      }
+    } else {
+      alert("Erreur : " + response.data.message);
+    }
+  } catch (error) {
+    console.error("❌ Erreur complète :", error);
+    
+    if (error.response) {
+      // Le serveur a répondu avec un statut d'erreur
+      console.error("Status:", error.response.status);
+      console.error("Data:", error.response.data);
+      
+      if (error.response.status === 404) {
+        alert("Erreur : Route non trouvée. Vérifiez que le serveur est démarré.");
+      } else if (error.response.status === 401) {
+        alert("Erreur : Vous devez être connecté pour effectuer cette action.");
+      } else {
+        const message = error.response.data?.message || "Erreur serveur";
+        alert(`Erreur (${error.response.status}): ${message}`);
+      }
+    } else if (error.request) {
+      console.error("Aucune réponse du serveur:", error.request);
+      alert("Erreur : Impossible de contacter le serveur. Vérifiez qu'il est démarré sur le port 3001.");
+    } else {
+      console.error("Erreur de configuration:", error.message);
+      alert("Erreur : " + error.message);
+    }
+  }
+};
+
   return (
     <div className="compte">
       <Accordion activeKey={activeKey} onSelect={setActiveKey}>
@@ -87,9 +134,7 @@ function Compte(props) {
                   {modifie && (
                     <Button
                       variant="primary"
-                      onClick={() => {
-                        /* Logique de confirmation ici */
-                      }}
+                      onClick={handleConfirmation}
                       className="fade-in mt-4 w-50"
                     >
                       Confirmer

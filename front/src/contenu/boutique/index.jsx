@@ -10,6 +10,8 @@ function Boutique(props) {
   const [filterText, setFilterText] = useState("");
   const searchRef = useRef(null);
   const [products, setProducts] = useState([]);
+  const [minPrix, setMinPrix] = useState("");
+  const [maxPrix, setMaxPrix] = useState("");
   const [categories, setCategories] = useState([]); // Initialiser comme tableau vide
   const navigate = useNavigate();
 
@@ -122,6 +124,16 @@ function Boutique(props) {
           product.description.toLowerCase().includes(searchText) ||
           (product.brand_name && product.brand_name.toLowerCase().includes(searchText))
         );
+      })
+      .filter((product) => {
+        // Filtre par prix
+        const prix = parseFloat(product.prix);
+        const min = parseFloat(minPrix);
+        const max = parseFloat(maxPrix);
+
+        if (!isNaN(min) && prix < min) return false;
+        if (!isNaN(max) && prix > max) return false;
+        return true;
       });
   };
 
@@ -261,6 +273,38 @@ function Boutique(props) {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="input-group mb-3">
+            <span className="input-group-text">Prix min</span>
+            <input
+              type="number"
+              className="form-control"
+              value={minPrix}
+              onChange={(e) => setMinPrix(e.target.value)}
+              placeholder="0"
+              min="0"
+              style={{ maxWidth: "300px" }}
+            />
+            <span className="input-group-text">Prix max</span>
+            <input
+              type="number"
+              className="form-control"
+              value={maxPrix}
+              onChange={(e) => setMaxPrix(e.target.value)}
+              placeholder="1000"
+              min="0"
+              style={{ maxWidth: "300px" }}
+            />
+            <button
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => {
+                setSearch('');
+                setMinPrix('');
+                setMaxPrix('');
+              }}
+            >
+              Réinitialiser
+            </button>
           </div>
         </form>
       </div>

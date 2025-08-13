@@ -6,27 +6,26 @@ const uuid = require("uuid");
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const dotenv = require("dotenv");
-// Garder les deux versions combinées
 const isAdmin = require('./isAdmin');
 const cors = require('cors');
 const PDFDocument = require("pdfkit");
 
 
 
-// Charger les variables d'environnement EN PREMIER
+// Charger les variables d'environnement
 require('dotenv').config({ path: './back/.env' });
 dotenv.config();
 
-// Initialiser Stripe APRÈS avoir chargé les variables d'environnement
+// Initialisation de Stripe
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors({
-  origin: true, // adapte selon le port de ton front
-  credentials: true               // essentiel pour les cookies de session
+  origin: true,
+  credentials: true 
 }));
 
-// Mais récupérer le router si nécessaire
+
 const router = express.Router();
 app.use(express.json());
 app.use(
@@ -58,7 +57,7 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0,
 });
 
-// Middleware de log pour les requêtes (débogage)
+// Middleware de log pour les requêtes
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
   next();
@@ -69,8 +68,8 @@ app.use((req, res, next) => {
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER, // Ton adresse Gmail
-    pass: process.env.EMAIL_PASS  // Le mot de passe d'application
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS 
   }
 });
 
@@ -308,36 +307,56 @@ app.get("/api/user", (req, res) => {
 });
 
 app.post("/api/user", (req, res) => {
+  console.log("📝 Requête POST /api/user reçue");
+  console.log("Session:", req.session.user ? "✅ Connecté" : "❌ Non connecté");
+  console.log("Body:", req.body);
+
   if (!req.session.user) {
-    res.send({ success: false, message: "Non connecté" });
-    return;
+    console.log("❌ Utilisateur non connecté");
+    return res.status(401).json({ success: false, message: "Non connecté" });
   }
 
   const { nom, prenom, email } = req.body;
 
   if (!nom || !prenom || !email) {
-    res.send({ success: false, message: "Veuillez remplir tous les champs" });
-    return;
+    console.log("❌ Champs manquants");
+    return res.status(400).json({ success: false, message: "Veuillez remplir tous les champs" });
   }
 
   if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-    res.send({ success: false, message: "Email invalide" });
-    return;
+    console.log("❌ Email invalide");
+    return res.status(400).json({ success: false, message: "Email invalide" });
   }
 
   const id = req.session.user.id;
+  console.log("🔄 Mise à jour utilisateur ID:", id);
 
-  pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, rows) => {
+  pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, result) => {
     if (err) {
-      res.send({ success: false, message: err });
-    } else {
-      req.session.user.nom = nom;
-      req.session.user.prenom = prenom;
-      req.session.user.email = email;
-      res.send({ success: true, message: "success" });
+      console.error("❌ Erreur SQL:", err);
+      return res.status(500).json({ success: false, message: "Erreur serveur" });
     }
+
+    if (result.affectedRows === 0) {
+      console.log("❌ Aucun utilisateur trouvé avec cet ID");
+      return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
+    }
+
+    // Mettre à jour la session
+    req.session.user.nom = nom;
+    req.session.user.prenom = prenom;
+    req.session.user.email = email;
+
+    console.log("✅ Utilisateur mis à jour avec succès");
+    return res.json({ 
+      success: true, 
+      message: "Informations mises à jour avec succès",
+      user: req.session.user
+    });
   });
 });
+
+
 
 app.post("/api/login", (req, res) => {
   const email = req.body.email;

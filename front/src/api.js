@@ -1,4 +1,5 @@
 import axios from 'axios';
+
 axios.defaults.baseURL = 'http://localhost:3001'; // L'URL de ton backend
 axios.defaults.withCredentials = true; // Pour envoyer les cookies
 

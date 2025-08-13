@@ -229,7 +229,7 @@ function Navbar(props) {
       <div className="overflow-hidden nav-wrapper" style={props.navbarOpen ? { maxWidth: "300px" } : { maxWidth: 0 }} >
         <nav>
             <div className="topnav">
-              <img src="src/assets/téléchargement.jpg" className="" alt="" />
+              <img src="public/Logo_app_cyna.png" className="" alt="" />
 
               <NavLink to="/">
                 <button className="btn">
