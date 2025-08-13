@@ -1,4 +1,5 @@
 import axios from 'axios';
+
 axios.defaults.baseURL = 'http://localhost:3001'; // L'URL de ton backend
 axios.defaults.withCredentials = true; // Pour envoyer les cookies
 
@@ -19,6 +20,20 @@ const api = {
     return axios.get('/api/user');
   },
 
+  // Fonction pour demander un reset de mot de passe
+  forgotPassword(email) {
+    return axios.post('/api/forgot-password', { email });
+  },
+
+  // Fonction pour réinitialiser le mot de passe avec le token
+  resetPassword(token, password, confirmPassword) {
+    return axios.post('/api/reset-password', { 
+      token, 
+      password, 
+      confirmPassword 
+    });
+  },
+
   // Vérifier si l'utilisateur actuel est admin
   checkAdmin() {
     return axios.post('/api/check-admin');
@@ -36,8 +51,6 @@ const api = {
     return axios.get('/api/commandes');
   },
 
-  
-
   newCommande(produits) {
     return axios.post('/api/commande', { produits });
   },
@@ -48,6 +61,11 @@ const api = {
 
   getProduits() {
     return axios.get('/api/produits');
+  },
+
+  // NOUVELLE FONCTION : Récupérer les catégories
+  getCategories() {
+    return axios.get('/api/categories');
   },
 
   getProduitById(id) {
@@ -167,8 +185,22 @@ const api = {
   updateUserProfile: (userData) => axios.put(
     '/api/user/profile',
     userData
-  )
+  ),
 
+  // NOUVELLES FONCTIONS ADMIN pour les catégories (optionnel)
+  getAdminCategories: () => axios.get('/api/admin/categories'),
+  
+  addCategorie: (categorieData) => axios.post(
+    '/api/admin/categories',
+    categorieData
+  ),
+
+  updateCategorie: (id, categorieData) => axios.put(
+    `/api/admin/categories/${id}`,
+    categorieData
+  ),
+
+  deleteCategorie: (id) => axios.delete(`/api/admin/categories/${id}`)
 };
 
 export default api;

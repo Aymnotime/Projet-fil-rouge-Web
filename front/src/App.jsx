@@ -1,12 +1,15 @@
 import './App.css';
 import Navbar from './layout/Navbar';
+import Footer from './layout/Footer';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import api from './api';
 import Contenu from './contenu';
 import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './components/AdminDashboard';
+import ResetPasswordPage from './layout/ResetPasswordPage';
 import { AuthProvider } from './context/AuthContext';
+import PaiementPage from "./contenu/Stripe/PaiementPage";
 
 function App() {
   const [user, setUser] = useState();
@@ -93,10 +96,18 @@ function App() {
                   </AdminRoute>
                 }
               />
-          <Route path="/admin/commandes" 
-              element={<AdminDashboard />} />
+              <Route path="/admin/commandes" 
+                  element={<AdminDashboard />} />
+
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+              <Route path="/paiement" element={<PaiementPage />} />
             </Routes>
           </div>
+          
+          <Footer 
+            user={user} 
+            useAlternateFooter={useAlternateNavbar}
+          />
         </div>
       </AuthProvider>
     </Router>

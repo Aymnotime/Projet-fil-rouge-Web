@@ -1,24 +1,46 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import "./boutique.css";
 import Produit from "./Produit";
 import api from "../../api";
 
-
 function Boutique(props) {
   const [showCart, setShowCart] = useState(false);
-
   const [filterSelection, setFilterSelection] = useState("all");
   const [filterText, setFilterText] = useState("");
-
   const searchRef = useRef(null);
-
   const [products, setProducts] = useState([]);
+  const [minPrix, setMinPrix] = useState("");
+  const [maxPrix, setMaxPrix] = useState("");
+  const [categories, setCategories] = useState([]); // Initialiser comme tableau vide
+  const navigate = useNavigate();
 
   useEffect(() => {
+    // Récupérer les produits
     api.getProduits().then((response) => {
       if (response.data) {
         setProducts(response.data);
       }
+    }).catch((error) => {
+      console.error("Erreur lors de la récupération des produits:", error);
+    });
+
+    // Récupérer les catégories
+    api.getCategories().then((response) => {
+      console.log("Réponse catégories:", response); // Pour déboguer
+      
+      // Vérifier la structure de la réponse
+      if (response.data && response.data.success && response.data.data) {
+        setCategories(response.data.data);
+      } else if (response.data && Array.isArray(response.data)) {
+        setCategories(response.data);
+      } else {
+        console.error("Format de réponse inattendu pour les catégories:", response);
+        setCategories([]); // Assurer un tableau vide en cas d'erreur
+      }
+    }).catch((error) => {
+      console.error("Erreur lors de la récupération des catégories:", error);
+      setCategories([]); // Assurer un tableau vide en cas d'erreur
     });
   }, []);
 
@@ -65,6 +87,7 @@ function Boutique(props) {
       .then((response) => {
         if (response.data) {
           props.setPanier([]);
+          navigate("/compte?onglet=commandes");
         }
       });
   };
@@ -78,6 +101,41 @@ function Boutique(props) {
     (acc, product) => acc + product.prix * product.quantity,
     0
   );
+
+  // Fonction de filtrage utilisant les catégories de la BDD
+  const getFilteredProducts = () => {
+    return products
+      .filter((product) => {
+        // Filtre par catégorie
+        if (filterSelection === "all") {
+          return true;
+        } else {
+          // Filtrer par categorie_id
+          return product.categorie_id === parseInt(filterSelection);
+        }
+      })
+      .filter((product) => {
+        // Filtre par texte de recherche
+        if (!filterText) return true;
+        
+        const searchText = filterText.toLowerCase();
+        return (
+          product.nom.toLowerCase().includes(searchText) ||
+          product.description.toLowerCase().includes(searchText) ||
+          (product.brand_name && product.brand_name.toLowerCase().includes(searchText))
+        );
+      })
+      .filter((product) => {
+        // Filtre par prix
+        const prix = parseFloat(product.prix);
+        const min = parseFloat(minPrix);
+        const max = parseFloat(maxPrix);
+
+        if (!isNaN(min) && prix < min) return false;
+        if (!isNaN(max) && prix > max) return false;
+        return true;
+      });
+  };
 
   return (
     <>
@@ -96,14 +154,16 @@ function Boutique(props) {
           )}
         </i>
       </div>
+      
       <div
         className={`offcanvas-backdrop fade ${showCart ? "show" : "pe-none"}`}
       ></div>
+      
       <div
         className={`offcanvas offcanvas-end ${
           showCart ? "show" : "hiding"
         } z-index-1`}
-        tabindex="-1"
+        tabIndex="-1"
         id="offcanvasExample"
         aria-labelledby="offcanvasExampleLabel"
       >
@@ -126,7 +186,10 @@ function Boutique(props) {
             <div>
               <ul className="list-group position-relative">
                 {props.panier.map((product) => (
-                  <li className="list-group-item d-flex justify-content-between align-items-center">
+                  <li 
+                    key={product.id} 
+                    className="list-group-item d-flex justify-content-between align-items-center"
+                  >
                     <img
                       src={product.image}
                       alt={product.nom}
@@ -170,7 +233,6 @@ function Boutique(props) {
                     onClick={() => commander()}
                   >
                     Commander
-                    
                   </button>
                 </div>
               ) : (
@@ -182,8 +244,9 @@ function Boutique(props) {
           )}
         </div>
       </div>
+      
       <div ref={searchRef}>
-        <form>
+        <form onSubmit={(e) => e.preventDefault()}>
           <div className="input-group mb-3">
             <span className="input-group-text" id="basic-addon1">
               <i className="bi bi-search"></i>
@@ -202,50 +265,62 @@ function Boutique(props) {
               value={filterSelection}
               onChange={(e) => setFilterSelection(e.target.value)}
             >
-              <option value="all" selected>
-                Choose...
-              </option>
-              <option value="maillot">Maillots</option>
-              <option value="équipement">Équipements</option>
-              <option value="foot">Football</option>
+              <option value="all">Toutes les catégories</option>
+              {/* Vérifier que categories est un tableau avant de mapper */}
+              {Array.isArray(categories) && categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.nom}
+                </option>
+              ))}
             </select>
+          </div>
+          <div className="input-group mb-3">
+            <span className="input-group-text">Prix min</span>
+            <input
+              type="number"
+              className="form-control"
+              value={minPrix}
+              onChange={(e) => setMinPrix(e.target.value)}
+              placeholder="0"
+              min="0"
+              style={{ maxWidth: "300px" }}
+            />
+            <span className="input-group-text">Prix max</span>
+            <input
+              type="number"
+              className="form-control"
+              value={maxPrix}
+              onChange={(e) => setMaxPrix(e.target.value)}
+              placeholder="1000"
+              min="0"
+              style={{ maxWidth: "300px" }}
+            />
+            <button
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => {
+                setSearch('');
+                setMinPrix('');
+                setMaxPrix('');
+              }}
+            >
+              Réinitialiser
+            </button>
           </div>
         </form>
       </div>
+      
       <div className="d-grid gap-3 produits">
-        {products
-          .filter((product) => {
-            if (filterSelection === "all") {
-              return true;
-            } else {
-              return (
-                product.description
-                  .toLowerCase()
-                  .includes(filterSelection.toLowerCase()) ||
-                product.nom
-                  .toLowerCase()
-                  .includes(filterSelection.toLowerCase())
-              );
-            }
-          })
-          .filter((product) => {
-            return (
-              product.nom.toLowerCase().includes(filterText.toLowerCase()) ||
-              product.description
-                .toLowerCase()
-                .includes(filterText.toLowerCase())
-            );
-          })
-          .map((product) => (
-            <Produit
-              nom={product.nom}
-              description={product.description}
-              prix={product.prix}
-              image={product.image}
-              id={product.id}
-              ajoutPanier={() => ajoutPanier(product)}
-            />
-          ))}
+        {getFilteredProducts().map((product) => (
+          <Produit
+            key={product.id}
+            nom={product.nom}
+            description={product.description}
+            prix={product.prix}
+            image={product.image}
+            id={product.id}
+            ajoutPanier={() => ajoutPanier(product)}
+          />
+        ))}
       </div>
     </>
   );

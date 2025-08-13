@@ -1,97 +1,42 @@
-import React, { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import StripeContainer from "../Stripe/StripeContainer";
+import { useLocation } from "react-router-dom";
+import StripeContainer from "./StripeContainer";
 import "./PaiementPage.css";
 
-const PaiementPage = () => {
+export default function PaiementPage() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const [error, setError] = useState("");
-
-  // Récupérer les paramètres de l'URL
-  const urlParams = new URLSearchParams(location.search);
-  const commandeId = urlParams.get('commande_id');
-  const amount = parseFloat(urlParams.get('amount'));
-
-  useEffect(() => {
-    // Vérifier que les paramètres essentiels sont présents
-    if (!commandeId || commandeId === 'undefined') {
-      setError("ID de commande manquant ou invalide");
-      return;
-    }
-
-    if (!amount || isNaN(amount) || amount <= 0) {
-      setError("Montant invalide");
-      return;
-    }
-  }, [commandeId, amount]);
-
-  const handleRetour = () => {
-    navigate(-1); // Retour à la page précédente
-  };
-
-  if (error) {
-    return (
-      <div className="paiement-container">
-        <div className="alert alert-danger" role="alert">
-          <h4 className="alert-heading">Erreur</h4>
-          <p>{error}</p>
-          <hr />
-          <button className="btn btn-outline-danger" onClick={handleRetour}>
-            Retour
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const params = new URLSearchParams(location.search);
+  const commande_id = params.get("commande_id");
+  const amount = parseFloat(params.get("amount"));
 
   return (
     <div className="paiement-container">
-      <div className="row">
-        <div className="col-md-6">
-          <div className="card">
-            <div className="card-header">
-              <h4>Récapitulatif de votre commande</h4>
-            </div>
-            <div className="card-body">
-              <p><strong>Commande N°:</strong> {commandeId}</p>
-              <p><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
-              
-              <hr />
-              <div className="d-flex justify-content-between">
-                <strong>Total à payer:</strong>
-                <strong className="text-primary">{amount.toFixed(2)}€</strong>
-              </div>
+      <div className="card paiement-card">
+        <div className="card-header">
+          <h4>Paiement de votre commande</h4>
+        </div>
+        <div className="card-body">
+          <div className="resume-commande mb-4">
+            <h5>Résumé de la commande</h5>
+            <ul>
+              <li>
+                <span className="resume-label">Numéro de commande :</span>
+                <span className="resume-value">#{commande_id}</span>
+              </li>
+              <li>
+                <span className="resume-label">Montant à payer :</span>
+                <span className="resume-value">{amount.toFixed(2)} €</span>
+              </li>
+            </ul>
+            <div className="alert alert-info mt-3">
+              Merci de vérifier le montant avant de procéder au paiement.<br />
+              Le paiement est 100% sécurisé via Stripe.
             </div>
           </div>
-          
-          <button className="btn btn-secondary mt-3" onClick={handleRetour}>
-            <i className="bi bi-arrow-left"></i> Retour au panier
-          </button>
-        </div>
-        
-        <div className="col-md-6">
-          <div className="card">
-            <div className="card-header">
-              <h4>Paiement sécurisé</h4>
-            </div>
-            <div className="card-body">
-              <StripeContainer 
-                amount={amount}
-                commande_id={commandeId}
-                onSuccess={() => {
-                  // Rediriger vers une page de confirmation après paiement réussi
-                  setTimeout(() => {
-                    navigate('/commandes?success=true');
-                  }, 2000);
-                }}
-              />
-            </div>
+          <div className="stripe-section">
+            <StripeContainer amount={amount} commande_id={commande_id} />
           </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default PaiementPage;
+}

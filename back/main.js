@@ -3,28 +3,29 @@ const mysql = require("mysql2");
 const session = require("express-session");
 const bcrypt = require("bcrypt");
 const uuid = require("uuid");
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const dotenv = require("dotenv");
-// Garder les deux versions combinées
 const isAdmin = require('./isAdmin');
 const cors = require('cors');
 const PDFDocument = require("pdfkit");
 
 
 
-// Charger les variables d'environnement EN PREMIER
+// Charger les variables d'environnement
 require('dotenv').config({ path: './back/.env' });
 dotenv.config();
 
-// Initialiser Stripe APRÈS avoir chargé les variables d'environnement
+// Initialisation de Stripe
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors({
-  origin: true, // adapte selon le port de ton front
-  credentials: true               // essentiel pour les cookies de session
+  origin: true,
+  credentials: true 
 }));
 
-// Mais récupérer le router si nécessaire
+
 const router = express.Router();
 app.use(express.json());
 app.use(
@@ -56,10 +57,28 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0,
 });
 
-// Middleware de log pour les requêtes (débogage)
+// Middleware de log pour les requêtes
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
   next();
+});
+
+
+// Configuration du transporteur email avec Gmail
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS 
+  }
+});
+
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Erreur configuration email:', error);
+  } else {
+    console.log('✅ Serveur email prêt à envoyer');
+  }
 });
 
 app.get("/api/admin/commandes", isAdmin, (req, res) => {
@@ -288,36 +307,56 @@ app.get("/api/user", (req, res) => {
 });
 
 app.post("/api/user", (req, res) => {
+  console.log("📝 Requête POST /api/user reçue");
+  console.log("Session:", req.session.user ? "✅ Connecté" : "❌ Non connecté");
+  console.log("Body:", req.body);
+
   if (!req.session.user) {
-    res.send({ success: false, message: "Non connecté" });
-    return;
+    console.log("❌ Utilisateur non connecté");
+    return res.status(401).json({ success: false, message: "Non connecté" });
   }
 
   const { nom, prenom, email } = req.body;
 
   if (!nom || !prenom || !email) {
-    res.send({ success: false, message: "Veuillez remplir tous les champs" });
-    return;
+    console.log("❌ Champs manquants");
+    return res.status(400).json({ success: false, message: "Veuillez remplir tous les champs" });
   }
 
   if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-    res.send({ success: false, message: "Email invalide" });
-    return;
+    console.log("❌ Email invalide");
+    return res.status(400).json({ success: false, message: "Email invalide" });
   }
 
   const id = req.session.user.id;
+  console.log("🔄 Mise à jour utilisateur ID:", id);
 
-  pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, rows) => {
+  pool.query('UPDATE utilisateur SET nom = ?, prenom = ?, email = ? WHERE id = ?', [nom, prenom, email, id], (err, result) => {
     if (err) {
-      res.send({ success: false, message: err });
-    } else {
-      req.session.user.nom = nom;
-      req.session.user.prenom = prenom;
-      req.session.user.email = email;
-      res.send({ success: true, message: "success" });
+      console.error("❌ Erreur SQL:", err);
+      return res.status(500).json({ success: false, message: "Erreur serveur" });
     }
+
+    if (result.affectedRows === 0) {
+      console.log("❌ Aucun utilisateur trouvé avec cet ID");
+      return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
+    }
+
+    // Mettre à jour la session
+    req.session.user.nom = nom;
+    req.session.user.prenom = prenom;
+    req.session.user.email = email;
+
+    console.log("✅ Utilisateur mis à jour avec succès");
+    return res.json({ 
+      success: true, 
+      message: "Informations mises à jour avec succès",
+      user: req.session.user
+    });
   });
 });
+
+
 
 app.post("/api/login", (req, res) => {
   const email = req.body.email;
@@ -471,6 +510,192 @@ app.post("/api/password", (req, res) => {
         }
     });
 });
+
+// Route pour demander un reset de mot de passe
+app.post("/api/forgot-password", (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.send({ success: false, message: "Veuillez fournir une adresse email" });
+    return;
+  }
+
+  if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+    res.send({ success: false, message: "Email invalide" });
+    return;
+  }
+
+  // Vérifier si l'utilisateur existe
+  pool.query('SELECT * FROM utilisateur WHERE email = ?', [email], (err, rows) => {
+    if (err) {
+      console.error("Erreur recherche utilisateur:", err);
+      res.status(500).send({ success: false, message: "Erreur serveur" });
+      return;
+    }
+
+    if (rows.length === 0) {
+      // Pour des raisons de sécurité, on ne révèle pas si l'email existe ou non
+      res.send({ success: true, message: "Si cette adresse email existe dans notre système, vous recevrez un lien de réinitialisation." });
+      return;
+    }
+
+    const user = rows[0];
+
+    // Générer un token de réinitialisation (valide 1 heure)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenExpiry = new Date(Date.now() + 3600000); // 1 heure
+
+    // Sauvegarder le token en base
+    pool.query(
+      'UPDATE utilisateur SET reset_token = ?, reset_token_expiry = ? WHERE id = ?',
+      [resetToken, tokenExpiry, user.id],
+      (err, result) => {
+        if (err) {
+          console.error("Erreur sauvegarde token:", err);
+          res.status(500).send({ success: false, message: "Erreur serveur" });
+          return;
+        }
+
+        // Configuration de l'email
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${resetToken}`;
+        
+        const mailOptions = {
+          from: process.env.EMAIL_FROM || 'noreply@votresite.com',
+          to: email,
+          subject: 'Réinitialisation de votre mot de passe',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>Réinitialisation de mot de passe</h2>
+              <p>Bonjour ${user.prenom} ${user.nom},</p>
+              <p>Vous avez demandé une réinitialisation de votre mot de passe.</p>
+              <p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
+              <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Réinitialiser mon mot de passe
+              </a>
+              <p style="margin-top: 20px;">
+                <strong>Ce lien expire dans 1 heure.</strong>
+              </p>
+              <p>Si vous n'avez pas demandé cette réinitialisation, ignorez simplement cet email.</p>
+              <hr style="margin: 20px 0;">
+              <p style="font-size: 12px; color: #666;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :<br>
+                ${resetUrl}
+              </p>
+            </div>
+          `
+        };
+
+        // Envoyer l'email (nécessite nodemailer configuré)
+        transporter.sendMail(mailOptions, (error, info) => {
+          if (error) {
+            console.error('Erreur envoi email:', error);
+            res.status(500).send({ success: false, message: "Erreur lors de l'envoi de l'email" });
+          } else {
+            console.log('Email envoyé:', info.response);
+            res.send({ 
+              success: true, 
+              message: "Un email de réinitialisation a été envoyé à votre adresse." 
+            });
+          }
+        });
+      }
+    );
+  });
+});
+
+// Route pour réinitialiser le mot de passe avec le token
+app.post("/api/reset-password", (req, res) => {
+  const { token, password, confirmPassword } = req.body;
+
+  if (!token || !password || !confirmPassword) {
+    res.send({ success: false, message: "Veuillez remplir tous les champs" });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.send({ success: false, message: "Le mot de passe doit contenir au moins 8 caractères" });
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    res.send({ success: false, message: "Les mots de passe ne correspondent pas" });
+    return;
+  }
+
+  // Vérifier le token et sa validité
+  pool.query(
+    'SELECT * FROM utilisateur WHERE reset_token = ? AND reset_token_expiry > NOW()',
+    [token],
+    (err, rows) => {
+      if (err) {
+        console.error("Erreur vérification token:", err);
+        res.status(500).send({ success: false, message: "Erreur serveur" });
+        return;
+      }
+
+      if (rows.length === 0) {
+        res.send({ 
+          success: false, 
+          message: "Token invalide ou expiré. Veuillez faire une nouvelle demande de réinitialisation." 
+        });
+        return;
+      }
+
+      const user = rows[0];
+
+      // Hasher le nouveau mot de passe
+      bcrypt.hash(password, 10, (err, hash) => {
+        if (err) {
+          console.error("Erreur hashage mot de passe:", err);
+          res.status(500).send({ success: false, message: "Erreur serveur" });
+          return;
+        }
+
+        // Mettre à jour le mot de passe et supprimer le token
+        pool.query(
+          'UPDATE utilisateur SET mdp = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?',
+          [hash, user.id],
+          (err, result) => {
+            if (err) {
+              console.error("Erreur mise à jour mot de passe:", err);
+              res.status(500).send({ success: false, message: "Erreur serveur" });
+              return;
+            }
+
+            console.log(`Mot de passe réinitialisé pour l'utilisateur ${user.email}`);
+            res.send({ 
+              success: true, 
+              message: "Votre mot de passe a été réinitialisé avec succès." 
+            });
+          }
+        );
+      });
+    }
+  );
+});
+
+// Route optionnelle pour vérifier la validité d'un token
+app.get("/api/verify-reset-token/:token", (req, res) => {
+  const { token } = req.params;
+
+  pool.query(
+    'SELECT id FROM utilisateur WHERE reset_token = ? AND reset_token_expiry > NOW()',
+    [token],
+    (err, rows) => {
+      if (err) {
+        res.status(500).send({ success: false, message: "Erreur serveur" });
+        return;
+      }
+
+      if (rows.length === 0) {
+        res.send({ success: false, message: "Token invalide ou expiré" });
+      } else {
+        res.send({ success: true, message: "Token valide" });
+      }
+    }
+  );
+});
+
 
 app.post("/api/commande", (req, res) => {
     if (!req.session.user) {
@@ -725,6 +950,35 @@ app.post("/api/register", (req, res) => {
                     email: user.email,
                     fonction: user.fonction,
                   };
+
+                  // ENVOI DE L'EMAIL DE BIENVENUE
+                  const mailOptions = {
+                    from: process.env.EMAIL_FROM || 'noreply@votresite.com',
+                    to: email,
+                    subject: 'Bienvenue sur notre site !',
+                    html: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2>Bienvenue ${prenom} ${nom} !</h2>
+                        <p>Merci de vous être inscrit sur notre site.</p>
+                        <p>Nous sommes ravis de vous compter parmi nos membres.</p>
+                        <p>Vous pouvez dès à présent vous connecter et profiter de nos services.</p>
+                        <hr style="margin: 20px 0;">
+                        <p style="font-size: 12px; color: #666;">
+                          Si vous n'êtes pas à l'origine de cette inscription, ignorez simplement cet email.
+                        </p>
+                      </div>
+                    `
+                  };
+
+                  transporter.sendMail(mailOptions, (error, info) => {
+                    if (error) {
+                      console.error('Erreur envoi email bienvenue:', error);
+                      // On ne bloque pas l'inscription même si l'email échoue
+                    } else {
+                      console.log('Email de bienvenue envoyé:', info.response);
+                    }
+                  });
+
                   res.send({
                     success: true,
                     message: "User successfully created",
@@ -921,6 +1175,83 @@ app.post("/api/update-payment-status", async (req, res) => {
       try {
         await pool.promise().execute(updateCommandeQuery, [commande_id]);
         console.log("✅ Statut commande mis à jour:", commande_id);
+
+        // Récupérer les infos de la commande et de l'utilisateur pour la facture
+        const [commandeRows] = await pool.promise().query(
+          "SELECT c.*, u.email, u.nom, u.prenom FROM commande c JOIN utilisateur u ON c.id_utilisateur = u.id WHERE c.id = ?",
+          [commande_id]
+        );
+        if (commandeRows.length > 0) {
+          const commande = commandeRows[0];
+          const produits = JSON.parse(commande.produits);
+
+          // Récupérer les détails des produits
+          const [stockRows] = await pool.promise().query(
+            "SELECT id, nom, prix FROM stock WHERE id IN (?)",
+            [produits.map(p => p.id)]
+          );
+          // Associer quantité et prix
+          let total = 0;
+          const lignes = produits.map(p => {
+            const prod = stockRows.find(s => s.id === p.id);
+            const prix = prod ? prod.prix : 0;
+            const nom = prod ? prod.nom : "Produit inconnu";
+            const quantite = 1;
+            const sousTotal = prix * quantite;
+            total += sousTotal;
+            return `<tr>
+              <td>${nom}</td>
+              <td>${quantite}</td>
+              <td>${prix.toFixed(2)} €</td>
+              <td>${sousTotal.toFixed(2)} €</td>
+            </tr>`;
+          }).join("");
+
+          // Email HTML
+          const factureHtml = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2>Votre facture</h2>
+              <p>Bonjour ${commande.prenom} ${commande.nom},</p>
+              <p>Merci pour votre commande. Voici le récapitulatif :</p>
+              <table style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Article</th>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Quantité</th>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Prix unitaire</th>
+                    <th style="border-bottom:1px solid #ccc;text-align:left;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${lignes}
+                </tbody>
+              </table>
+              <h3 style="margin-top:20px;">Total payé : ${total.toFixed(2)} €</h3>
+              <hr style="margin: 20px 0;">
+              <p style="font-size: 12px; color: #666;">
+                Merci pour votre confiance.<br>
+                Ceci est une facture générée automatiquement.
+              </p>
+            </div>
+          `;
+
+          // Envoi de l'email
+          const mailOptions = {
+            from: process.env.EMAIL_FROM || 'noreply@votresite.com',
+            to: commande.email,
+            subject: 'Votre facture - Merci pour votre commande',
+            html: factureHtml
+          };
+
+          transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+              console.error('Erreur envoi email facture:', error);
+            } else {
+              console.log('Email de facture envoyé:', info.response);
+            }
+          });
+        }
+
       } catch (commandeError) {
         console.error("⚠️ Erreur mise à jour commande (non bloquant):", commandeError);
         // On ne bloque pas la réponse même si la mise à jour de la commande échoue
@@ -939,6 +1270,133 @@ app.post("/api/update-payment-status", async (req, res) => {
     console.error("❌ Erreur mise à jour:", err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Route pour récupérer toutes les catégories
+app.get('/api/categories', (req, res) => {
+    pool.query('SELECT * FROM categorie ORDER BY nom', (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({ 'success': true, 'data': rows });
+        }
+    });
+});
+
+// Route pour récupérer les produits avec les informations de catégorie (jointure)
+app.get('/api/produits-with-category', (req, res) => {
+    pool.query(`
+        SELECT s.*, c.nom as categorie_nom 
+        FROM stock s 
+        LEFT JOIN categorie c ON s.categorie_id = c.id 
+        ORDER BY s.nom
+    `, (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({ 'success': true, 'data': rows });
+        }
+    });
+});
+
+// ROUTES ADMIN pour la gestion des catégories (optionnel)
+
+// Récupérer toutes les catégories (admin)
+app.get('/api/admin/categories', isAdmin, (req, res) => {
+    pool.query('SELECT * FROM categorie ORDER BY nom', (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({ 'success': true, 'data': rows });
+        }
+    });
+});
+
+// Ajouter une nouvelle catégorie (admin)
+app.post('/api/admin/categories', isAdmin, (req, res) => {
+    const { nom, description } = req.body;
+    
+    if (!nom) {
+        return res.send({
+            success: false,
+            message: 'Le nom de la catégorie est requis'
+        });
+    }
+    
+    pool.query('INSERT INTO categorie (nom, description) VALUES (?, ?)', [nom, description || null], (err, result) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else {
+            res.send({
+                success: true,
+                message: 'Catégorie ajoutée avec succès',
+                data: { id: result.insertId, nom, description }
+            });
+        }
+    });
+});
+
+// Modifier une catégorie (admin)
+app.put('/api/admin/categories/:id', isAdmin, (req, res) => {
+    const { id } = req.params;
+    const { nom, description } = req.body;
+    
+    if (!nom) {
+        return res.send({
+            success: false,
+            message: 'Le nom de la catégorie est requis'
+        });
+    }
+    
+    pool.query('UPDATE categorie SET nom = ?, description = ? WHERE id = ?', [nom, description || null, id], (err, result) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else if (result.affectedRows === 0) {
+            res.send({
+                success: false,
+                message: 'Catégorie non trouvée'
+            });
+        } else {
+            res.send({
+                success: true,
+                message: 'Catégorie modifiée avec succès'
+            });
+        }
+    });
+});
+
+// Supprimer une catégorie (admin)
+app.delete('/api/admin/categories/:id', isAdmin, (req, res) => {
+    const { id } = req.params;
+    
+    // Vérifier s'il y a des produits associés à cette catégorie
+    pool.query('SELECT COUNT(*) as count FROM stock WHERE categorie_id = ?', [id], (err, rows) => {
+        if (err) {
+            res.send({ 'success': false, 'message': err });
+        } else if (rows[0].count > 0) {
+            res.send({
+                success: false,
+                message: 'Impossible de supprimer cette catégorie car elle contient des produits'
+            });
+        } else {
+            // Supprimer la catégorie
+            pool.query('DELETE FROM categorie WHERE id = ?', [id], (err, result) => {
+                if (err) {
+                    res.send({ 'success': false, 'message': err });
+                } else if (result.affectedRows === 0) {
+                    res.send({
+                        success: false,
+                        message: 'Catégorie non trouvée'
+                    });
+                } else {
+                    res.send({
+                        success: true,
+                        message: 'Catégorie supprimée avec succès'
+                    });
+                }
+            });
+        }
+    });
 });
 
 

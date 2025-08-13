@@ -62,12 +62,12 @@ const AdminDashboard = () => {
       })
       .catch(() => setError("Erreur d'accès à l'API utilisateurs"));
 
-    // Charger tous les produits pour avoir accès aux images dans les commandes
+    // Charger tous les produits
     api.getAdminProduits()
       .then(res => {
         if (res.data.success) {
           setProduits(res.data.produits);
-          // Créer un map des produits par ID pour un accès facile
+          
           const map = {};
           res.data.produits.forEach(prod => {
             map[prod.id] = prod;
@@ -561,16 +561,16 @@ const AdminDashboard = () => {
       </h1>
       {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
 
-      {/* Tableau des utilisateurs - MODIFIÉ: Réduction de taille */}
+      {/* Tableau des utilisateurs */}
       <table
         border="1"
         cellPadding="8"
         style={{
           borderCollapse: "collapse",
-          width: "90%", /* Réduit de 100% à 90% */
-          margin: "0 auto 20px auto", /* Centré avec marge auto */
+          width: "90%", 
+          margin: "0 auto 20px auto", 
           tableLayout: "fixed",
-          maxWidth: "1000px" /* Limitation de la largeur maximale */
+          maxWidth: "1000px" 
         }}
       >
         <thead>
