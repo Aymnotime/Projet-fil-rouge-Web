@@ -7,7 +7,7 @@ import Confidentialite from "./confidentialite";
 import Compte from "./compte";
 import Matchs from "./matchs";
 import ArticleUrl from "./accueil/articleUrl/articleurl";
-import FicheProduit from "./accueil/article/FicheProduit";
+import FicheProduit from "./accueil/article/ficheProduit";
 
 function Contenu(props) {
   const [panier, setPanier] = useState([]);
