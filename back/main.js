@@ -11,7 +11,14 @@ const cors = require('cors');
 const PDFDocument = require("pdfkit");
 
 
-// ...existing code...
+
+
+
+const app = express();
+app.use(cors({
+  origin: true,
+  credentials: true 
+}));
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com"; // Remplace <TON_FRONT_RENDER> par l'URL de ton front
 
@@ -44,14 +51,6 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS 
   }
 });
-
-const app = express();
-app.use(cors({
-  origin: true,
-  credentials: true 
-}));
-
-
 const router = express.Router();
 app.use(express.json());
 
@@ -1111,7 +1110,7 @@ app.post("/api/reset-password", (req, res) => {
     }
   );
 });
-
+// ...existing code...
 app.post("/api/commande", (req, res) => {
     if (!req.session.user) {
         res.send({ success: false, message: "Non connecté" });
