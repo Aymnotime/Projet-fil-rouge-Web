@@ -16,9 +16,10 @@ const app = express();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com"; // Remplace <TON_FRONT_RENDER> par l'URL de ton front
 app.use(cors({
-  origin: [FRONTEND_URL],
+  origin: [process.env.FRONTEND_URL, 'http://localhost:5173'],
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
