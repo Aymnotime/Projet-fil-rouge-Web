@@ -23,15 +23,18 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(
   session({
-    secret: "dsof82445qs*2E",
+    secret: process.env.SESSION_SECRET || "dsof82445qs*2E",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false, // Changé en false pour sécurité
     cookie: {
-      secure: true,
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000
+      secure: isProduction, // ✅ Secure seulement en production (HTTPS)
+      sameSite: isProduction ? 'none' : 'lax', // ✅ Adapté selon environnement
+      maxAge: 24 * 60 * 60 * 1000,
+      httpOnly: true // ✅ Sécurité supplémentaire
     }
   })
 );
