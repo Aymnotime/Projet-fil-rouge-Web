@@ -14,10 +14,33 @@ const PDFDocument = require("pdfkit");
 const app = express();
 
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com"; // Remplace <TON_FRONT_RENDER> par l'URL de ton front
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com";
+console.log("🌐 FRONTEND_URL configuré:", FRONTEND_URL);
+
 app.use(cors({
-  origin: [process.env.FRONTEND_URL, 'http://localhost:5173'],
-  credentials: true
+  origin: function (origin, callback) {
+    console.log("🔍 Origin de la requête:", origin);
+    
+    const allowedOrigins = [
+      FRONTEND_URL, 
+      'http://localhost:5173',
+      'https://projet-fil-rouge-web-front.onrender.com' // URL exacte de votre frontend
+    ];
+    
+    // Permettre les requêtes sans origin (Postman, mobile apps, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log("✅ Origin autorisé:", origin);
+      callback(null, true);
+    } else {
+      console.log("❌ Origin refusé:", origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
@@ -29,12 +52,12 @@ app.use(
   session({
     secret: process.env.SESSION_SECRET || "dsof82445qs*2E",
     resave: false,
-    saveUninitialized: false, // Changé en false pour sécurité
+    saveUninitialized: false,
     cookie: {
-      secure: isProduction, // ✅ Secure seulement en production (HTTPS)
-      sameSite: isProduction ? 'none' : 'lax', // ✅ Adapté selon environnement
+      secure: isProduction, 
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000,
-      httpOnly: true // ✅ Sécurité supplémentaire
+      httpOnly: true 
     }
   })
 );
