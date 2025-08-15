@@ -12,12 +12,28 @@ const PDFDocument = require("pdfkit");
 
 
 const app = express();
+
+
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://projet-fil-rouge-web-front.onrender.com"; // Remplace <TON_FRONT_RENDER> par l'URL de ton front
 app.use(cors({
   origin: [FRONTEND_URL],
   credentials: true
 }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
+app.use(
+  session({
+    secret: "dsof82445qs*2E",
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+      secure: true,
+      sameSite: 'none',
+      maxAge: 24 * 60 * 60 * 1000
+    }
+  })
+);
 // Route d'accueil pour vérifier que l'API fonctionne
 app.get("/", (req, res) => {
   res.send("API M2L déployée et opérationnelle !");
@@ -41,7 +57,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const router = express.Router();
-app.use(express.json());
+
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -59,18 +75,7 @@ const pool = mysql.createPool({
 });
 
 // Middleware de log pour les requêtes
-app.use(
-  session({
-    secret: "dsof82445qs*2E",
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-      secure: true,
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000
-    }
-  })
-);
+
 
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, req.session?.user?.fonction);
