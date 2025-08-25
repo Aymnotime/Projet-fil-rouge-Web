@@ -82,7 +82,6 @@ function Navbar(props) {
       if (res.data.success) {
         setSuccess("Un email de réinitialisation a été envoyé à votre adresse.");
         setError("");
-        // Optionnel : fermer le modal après 3 secondes
         setTimeout(() => setOpenForgotPassword(false), 3000);
       } else {
         setError(res.data.message);
@@ -229,7 +228,7 @@ function Navbar(props) {
       <div className="overflow-hidden nav-wrapper" style={props.navbarOpen ? { maxWidth: "300px" } : { maxWidth: 0 }} >
         <nav>
             <div className="topnav">
-              <img src="public/Logo_app_cyna.png" className="" alt="" />
+              <img src="public/cynaimage.png" className="" alt="" />
 
               <NavLink to="/">
                 <button className="btn">
